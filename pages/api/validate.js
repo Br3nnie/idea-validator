@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1000,
+        max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -27,7 +27,13 @@ export default async function handler(req, res) {
     const end = text.lastIndexOf("}");
     if (start === -1 || end === -1) return res.status(500).json({ error: `No JSON found: ${text.slice(0, 200)}` });
 
-    return res.status(200).json(JSON.parse(text.slice(start, end + 1)));
+    let jsonStr = text.slice(start, end + 1);
+    try {
+      return res.status(200).json(JSON.parse(jsonStr));
+    } catch (parseErr) {
+      // Truncated mid-array/object — likely hit max_tokens. Surface a clear error.
+      return res.status(500).json({ error: `Response was cut off before completing (stop_reason: ${data.stop_reason}). Try again — this is usually a one-off.` });
+    }
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
