@@ -187,6 +187,12 @@ export default function IdeaValidator() {
     <div style={{ minHeight:"100vh", background:"#080810", color:"#ddd9cc", fontFamily:"'Palatino Linotype',Palatino,serif" }}>
       <style>{`
         @keyframes spin{to{transform:rotate(360deg)}}
+        html, body { margin:0; }
+        .intake-page { min-height:100dvh; box-sizing:border-box; display:grid; place-items:center; padding:12px; background:radial-gradient(circle at 75% 0%,#24203c 0,transparent 36%),#080810; }
+        .intake-card { width:min(760px,100%); height:min(720px,calc(100dvh - 24px)); box-sizing:border-box; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; overflow:hidden; padding:clamp(20px,3vw,36px); border:1px solid #302d3b; border-radius:14px; background:linear-gradient(135deg,#1b1925,#121119); box-shadow:0 24px 80px #0007; }
+        .intake-question { min-height:0; overflow:hidden; padding-top:clamp(16px,3vh,30px); }
+        @media (max-height:640px) { .intake-card { height:calc(100dvh - 16px); padding:18px 22px; border-radius:10px; } .intake-question { padding-top:14px; } }
+        @media (max-width:600px) { .intake-page { padding:0; } .intake-card { height:100dvh; width:100%; border-radius:0; border-left:0; border-right:0; padding:20px; } }
         @media print {
           body { background: white !important; color: #111 !important; }
           .no-print { display: none !important; }
@@ -209,29 +215,36 @@ export default function IdeaValidator() {
 
       {/* INTAKE */}
       {phase === "intake" && (
-        <div style={{ height:"100svh", minHeight:0, display:"flex", flexDirection:"column", padding:"clamp(16px,3vh,32px) 24px", maxWidth:680, margin:"0 auto" }}>
-          <div style={{ display:"flex", gap:6, marginBottom:"clamp(20px,4vh,40px)", flexShrink:0 }}>
-            {STEPS.map((_,i) => <div key={i} style={{ flex:1, height:3, borderRadius:2, background:i<step?"#c9a84c":i===step?"#c9a84c88":"#1a1a2e", transition:"background 0.3s" }}/>)}
+        <div className="intake-page">
+          <div className="intake-card">
+          <div>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, color:"#bbb6c7", fontSize:11, fontFamily:"monospace", letterSpacing:"0.07em", textTransform:"uppercase" }}><span>{step+1} of {STEPS.length} — {STEPS[step].label}</span><span>{Math.round(((step+1)/STEPS.length)*100)}%</span></div>
+          <div style={{ display:"flex", gap:6 }}>
+            {STEPS.map((_,i) => <div key={i} style={{ flex:1, height:3, borderRadius:2, background:i<step?"#c9a84c":i===step?"#c9a84c88":"#302d3b", transition:"background 0.3s" }}/>)}
           </div>
-          <div style={{ flex:1, minHeight:0 }}>
-            <div style={{ fontSize:11, fontFamily:"monospace", color:"#c9a84c", letterSpacing:"0.15em", marginBottom:12 }}>{step+1} of {STEPS.length} — {STEPS[step].label}</div>
-            <h2 style={{ margin:"0 0 clamp(16px,2.5vh,24px)", fontSize:"clamp(20px,3vw,24px)", fontWeight:400, color:"#f0ede6", lineHeight:1.35 }}>{STEPS[step].question}</h2>
+          </div>
+          <div className="intake-question">
+            <div style={{ fontSize:10, fontFamily:"monospace", color:"#c9a84c", letterSpacing:"0.15em", marginBottom:10 }}>QUESTION 0{step+1}</div>
+            <h2 style={{ margin:"0 0 clamp(12px,2vh,18px)", fontSize:"clamp(20px,3vw,30px)", fontWeight:400, color:"#f0ede6", lineHeight:1.22 }}>{STEPS[step].question}</h2>
             <textarea ref={ref} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={keyDown} placeholder="Type your answer..." rows={5} maxLength={MAX_ANSWER_CHARS}
-              style={{ width:"100%", height:"clamp(120px,20vh,170px)", background:"#0f0f1a", border:"1px solid #2a2a3e", borderRadius:10, padding:"16px 18px", color:"#ddd9cc", fontSize:15, fontFamily:"inherit", lineHeight:1.7, resize:"none", outline:"none", boxSizing:"border-box" }}/>
+              style={{ width:"100%", height:"clamp(96px,17vh,148px)", background:"#0e0d14", border:"1px solid #3c3848", borderRadius:9, padding:"14px 16px", color:"#ddd9cc", fontSize:15, fontFamily:"inherit", lineHeight:1.55, resize:"none", outline:"none", boxSizing:"border-box" }}/>
             <div style={{ display:"flex", justifyContent:"space-between", gap:12, margin:"8px 0 0", fontSize:11, fontFamily:"monospace", color:answer.trim().length >= MIN_ANSWER_CHARS ? "#4ade80" : "#5a5870" }}>
               <span>{answer.trim().length >= MIN_ANSWER_CHARS ? "Enough detail to continue" : `${MIN_ANSWER_CHARS - answer.trim().length} more characters for a useful answer`}</span>
               <span style={{ color:"#5a5870", whiteSpace:"nowrap" }}>{answer.length}/{MAX_ANSWER_CHARS}</span>
             </div>
-            <p style={{ margin:"8px 0 0", fontSize:11, color:"#3a3850", fontFamily:"monospace" }}>⌘+Enter to continue</p>
+            <p style={{ margin:"7px 0 0", fontSize:11, color:"#5a5870", fontFamily:"monospace" }}>⌘+Enter to continue</p>
           </div>
-          {error && <div style={{ color:"#f87171", fontSize:12, marginBottom:16, fontFamily:"monospace", background:"#1c0606", padding:"10px 14px", borderRadius:6, wordBreak:"break-word" }}>{error}</div>}
-          <div style={{ display:"flex", justifyContent:"space-between", paddingTop:"clamp(14px,2vh,22px)", flexShrink:0 }}>
+          <div>
+          {error && <div style={{ color:"#f87171", fontSize:12, marginBottom:10, fontFamily:"monospace", background:"#1c0606", padding:"8px 12px", borderRadius:6, wordBreak:"break-word" }}>{error}</div>}
+          <div style={{ display:"flex", justifyContent:"space-between", paddingTop:10 }}>
             <button onClick={() => { if(step===0) reset(); else { setStep(step-1); setAnswer(answers[STEPS[step-1].id]||""); }}}
               style={{ background:"none", border:"1px solid #2a2a3e", borderRadius:8, color:"#6b6b8a", padding:"10px 20px", cursor:"pointer", fontSize:13, fontFamily:"monospace" }}>← Back</button>
             <button onClick={next} disabled={answer.trim().length<MIN_ANSWER_CHARS}
               style={{ background:answer.trim().length>=MIN_ANSWER_CHARS?"#c9a84c":"#1a1a2e", color:answer.trim().length>=MIN_ANSWER_CHARS?"#080810":"#3a3850", border:"none", borderRadius:8, padding:"12px 28px", cursor:answer.trim().length>=MIN_ANSWER_CHARS?"pointer":"default", fontSize:14, fontFamily:"inherit", transition:"all 0.2s" }}>
               {step===STEPS.length-1?"Generate Model →":"Next →"}
             </button>
+          </div>
+          </div>
           </div>
         </div>
       )}
