@@ -1,7 +1,36 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { prompt } = req.body;
+  const { prompt, email, ideaSummary, captureOnly } = req.body;
+
+  if (captureOnly) {
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    if (process.env.LOOPS_API_KEY) {
+      try {
+        const contactRes = await fetch("https://app.loops.so/api/v1/contacts/update", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.LOOPS_API_KEY}`,
+          },
+          body: JSON.stringify({
+            email,
+            source: "idea-validator",
+            ideaSummary: String(ideaSummary || "").slice(0, 2000),
+            ...(process.env.LOOPS_MAILING_LIST_ID?.trim() ? { mailingLists: { [process.env.LOOPS_MAILING_LIST_ID.trim()]: true } } : {}),
+          }),
+        });
+
+        if (!contactRes.ok) console.error("Loops contact error:", contactRes.status);
+      } catch (captureErr) {
+        console.error("Loops capture error:", captureErr);
+      }
+    }
+
+    return res.status(200).json({ captured: true });
+  }
+
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
   try {

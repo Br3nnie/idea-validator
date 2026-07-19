@@ -147,6 +147,8 @@ export default function IdeaValidator() {
   const [tab, setTab]       = useState("overview");
   const [error, setError]   = useState(null);
   const [status, setStatus] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
   const ref = useRef(null);
 
   useEffect(() => { if (phase === "intake") ref.current?.focus(); }, [phase, step]);
@@ -156,7 +158,7 @@ export default function IdeaValidator() {
     setAnswers(updated);
     setAnswer("");
     if (step < STEPS.length - 1) setStep(step + 1);
-    else generate(updated);
+    else setPhase("emailGate");
   };
 
   const keyDown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && answer.trim().length >= MIN_ANSWER_CHARS) next(); };
@@ -179,7 +181,30 @@ export default function IdeaValidator() {
     }
   };
 
-  const reset = () => { setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); };
+  const captureContact = async (submittedEmail) => {
+    const ideaSummary = STEPS.map(s => `${s.label}: ${answers[s.id] || ""}`).join("\n");
+    try {
+      await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captureOnly: true, email: submittedEmail, ideaSummary }),
+      });
+    } catch (_) {
+      // Contact capture must not prevent someone seeing a validation result.
+    }
+  };
+
+  const submitEmail = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+    await captureContact(email);
+    generate(answers);
+  };
+
+  const reset = () => { setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setEmailError(""); };
 
   const avg = model?.scoring ? Math.round(model.scoring.reduce((s,c) => s+c.score,0)/model.scoring.length) : 0;
 
@@ -194,10 +219,11 @@ export default function IdeaValidator() {
         @media (max-height:640px) { .intake-card { height:calc(100dvh - 16px); padding:18px 22px; border-radius:10px; } .intake-question { padding-top:14px; } }
         @media (max-width:600px) { .intake-page { padding:0; } .intake-card { height:100dvh; width:100%; border-radius:0; border-left:0; border-right:0; padding:20px; } }
         @media print {
-          body { background: white !important; color: #111 !important; }
+          @page { size: A4 portrait; margin: 12mm; }
+          html, body, #__next { background: white !important; color: #111 !important; height: auto !important; margin: 0 !important; min-height: 0 !important; }
           .no-print { display: none !important; }
-          .print-section { page-break-inside: avoid; }
-          .print-all * { display: block !important; }
+          .print-all { display: block !important; padding: 0 !important; }
+          .print-section { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
 
@@ -246,6 +272,23 @@ export default function IdeaValidator() {
           </div>
           </div>
           </div>
+        </div>
+      )}
+
+      {/* EMAIL GATE */}
+      {phase === "emailGate" && (
+        <div style={{ minHeight:"100dvh", display:"grid", placeItems:"center", padding:"24px", background:"#f0f4f8", fontFamily:"'DM Sans', Arial, sans-serif", color:"#1a1a2e" }}>
+          <section style={{ width:"min(520px,100%)", background:"#fff", border:"1px solid #e2e8f0", borderRadius:16, boxShadow:"0 18px 50px #1a56db18", padding:"clamp(28px,5vw,44px)" }}>
+            <div style={{ color:"#1a56db", fontSize:11, fontWeight:700, letterSpacing:".12em", textTransform:"uppercase", marginBottom:12 }}>Corbelle</div>
+            <h2 style={{ margin:"0 0 12px", color:"#1a1a2e", fontSize:"clamp(25px,4vw,32px)", lineHeight:1.18 }}>Your validation model is ready.</h2>
+            <p style={{ margin:"0 0 8px", color:"#4a5568", fontSize:15, lineHeight:1.7 }}>Enter your email to unlock the full validation model: assumptions ranked by risk, the opportunity matrix, scoring, a test plan and your Go/Test/Kill verdict.</p>
+            <p style={{ margin:"0 0 24px", color:"#6b7280", fontSize:12, lineHeight:1.55 }}>We’ll use this to send relevant follow-up. No spam.</p>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && submitEmail()} placeholder="Your work email address" autoFocus
+              style={{ width:"100%", boxSizing:"border-box", background:"#f8fafc", border:"1.5px solid #e2e8f0", borderRadius:10, color:"#1a1a2e", fontSize:15, padding:"14px 16px", outline:"none" }} />
+            {emailError && <p style={{ color:"#b91c1c", fontSize:12, margin:"8px 0 0" }}>{emailError}</p>}
+            <button onClick={submitEmail} style={{ width:"100%", border:0, borderRadius:50, background:"#1a56db", color:"#fff", cursor:"pointer", fontSize:15, fontWeight:600, marginTop:20, padding:"14px 28px" }}>Show my validation model →</button>
+            <button onClick={() => { setPhase("intake"); setStep(STEPS.length - 1); setAnswer(answers[STEPS[STEPS.length - 1].id] || ""); }} style={{ width:"100%", background:"transparent", border:"1.5px solid #1a56db", borderRadius:50, color:"#1a56db", cursor:"pointer", fontSize:14, fontWeight:600, marginTop:10, padding:"12px 28px" }}>← Back to answers</button>
+          </section>
         </div>
       )}
 

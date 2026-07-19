@@ -31,3 +31,12 @@ echo "ANTHROPIC_API_KEY=your_key_here" > .env.local
 npm run dev
 ```
 Open http://localhost:3000
+
+## Email capture
+
+The email gate appears after the sixth question and before the AI model is generated. To save captures to Loops, configure these Vercel environment variables:
+
+- `LOOPS_API_KEY`
+- `LOOPS_MAILING_LIST_ID` (optional)
+
+Captured contacts receive the source `idea-validator` and an abbreviated idea summary. The validation still works if Loops is not configured.
