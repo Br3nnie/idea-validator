@@ -1,33 +1,19 @@
 # Idea Validator
 
-AI-powered startup idea validation. Answer 6 questions, get a full validation model with assumptions, scoring, and Go/Test/Kill verdict.
+An opinionated six-question startup validation flow. It produces a concise validation model, risk-aware Go/Test/Kill verdict, and print-ready report.
 
-## Deploy to Vercel
+## Local development
 
-### 1. Push to GitHub
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-gh repo create idea-validator --public --push
-```
-
-### 2. Deploy on Vercel
-- Go to vercel.com → Add New Project
-- Import your GitHub repo
-- Click Deploy (no build settings needed — Next.js auto-detected)
-
-### 3. Add your API key
-- In Vercel dashboard → your project → Settings → Environment Variables
-- Add: `ANTHROPIC_API_KEY` = your key from console.anthropic.com
-- Redeploy (Settings → Deployments → Redeploy)
-
-That's it. Your app is live at `your-project.vercel.app`.
-
-## Local dev
 ```bash
 npm install
-echo "ANTHROPIC_API_KEY=your_key_here" > .env.local
 npm run dev
 ```
-Open http://localhost:3000
+
+Open `http://localhost:3000`.
+
+## v2 improvements
+
+- Compact, viewport-aware question screens with visible actions.
+- Live answer character counts and minimum-detail guidance.
+- Question examples, a review screen, and an expanded report.
+- Private-by-default copy, print/PDF output, metadata and responsive styling.
