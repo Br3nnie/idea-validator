@@ -1,4 +1,4 @@
-import { listExperiments, updateExperiment } from "../../../../lib/submissions";
+import { listExperiments, updateExperiment, validReportAccess } from "../../../../lib/submissions";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATUSES = new Set(["planned", "running", "completed"]);
@@ -10,12 +10,14 @@ export default async function handler(req, res) {
   const requestKey = String(req.query.requestKey || "");
   if (!UUID_PATTERN.test(requestKey)) return res.status(400).json({ error:"Invalid request key" });
   try {
+    if (!await validReportAccess(requestKey, req.headers["x-report-access-token"])) return res.status(401).json({ error:"Report access required" });
     if (req.method === "GET") return res.status(200).json({ experiments:await listExperiments(requestKey) });
     if (req.method === "PUT") {
-      const { id, hypothesis, method, targetAudience, successThreshold, deadline, result, decision, status } = req.body || {};
+      const { id, hypothesis, method, targetAudience, successThreshold, metricName, baselineValue, observedValue, learning, deadline, result, decision, status } = req.body || {};
       if (!UUID_PATTERN.test(String(id || "")) || !clean(hypothesis) || !clean(method) || !STATUSES.has(status)) return res.status(400).json({ error:"Invalid experiment" });
       const experiment = await updateExperiment(requestKey, id, {
         hypothesis:clean(hypothesis), method:clean(method), targetAudience:clean(targetAudience), successThreshold:clean(successThreshold),
+        metricName:clean(metricName, 500), baselineValue:clean(baselineValue, 500), observedValue:clean(observedValue, 500), learning:clean(learning),
         deadline:/^\d{4}-\d{2}-\d{2}$/.test(String(deadline || "")) ? deadline : null,
         result:clean(result), decision:clean(decision), status,
       });

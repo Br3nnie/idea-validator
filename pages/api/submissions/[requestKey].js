@@ -1,4 +1,4 @@
-import { findSubmissionByRequestKey, hasDatabase } from "../../../lib/submissions";
+import { createReportAccessForRequest, findSubmissionByRequestKey, hasDatabase } from "../../../lib/submissions";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -10,7 +10,10 @@ export default async function handler(req, res) {
   try {
     const submission = await findSubmissionByRequestKey(req.query.requestKey);
     if (!submission) return res.status(404).json({ error:"Report not found" });
-    if (submission.status === "completed") return res.status(200).json({ id:submission.id, status:submission.status, result:submission.result });
+    if (submission.status === "completed") {
+      const access = await createReportAccessForRequest(req.query.requestKey);
+      return res.status(200).json({ id:submission.id, status:submission.status, result:submission.result, accessToken:access?.token });
+    }
     if (submission.status === "failed") return res.status(200).json({ id:submission.id, status:submission.status, error:"The report could not be generated. Please start a new request." });
     return res.status(200).json({ id:submission.id, status:"processing", updatedAt:submission.updated_at });
   } catch (error) {

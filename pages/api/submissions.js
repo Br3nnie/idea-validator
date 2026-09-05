@@ -52,6 +52,7 @@ export default async function handler(req, res) {
         email: normalizedEmail,
         answers: cleanAnswers,
         loopsCaptured:false,
+        marketingConsent:Boolean(marketingConsent),
         pageUrl: String(pageUrl || "").slice(0, 2000),
         referrer: String(referrer || "").slice(0, 2000),
         userAgent: req.headers["user-agent"],
@@ -60,7 +61,7 @@ export default async function handler(req, res) {
         const raced = await findSubmissionByRequestKey(requestKey);
         return res.status(202).json({ id:raced?.id || null, status:raced?.status || "processing", duplicate:true });
       }
-      waitUntil(processSubmission({ id, email:normalizedEmail, answers:cleanAnswers, marketingConsent:Boolean(marketingConsent) }));
+      waitUntil(processSubmission({ id }));
       return res.status(202).json({ id, status:"processing" });
     } catch (error) {
       console.error("Submission processing error:", error);

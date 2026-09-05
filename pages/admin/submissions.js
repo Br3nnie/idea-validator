@@ -105,6 +105,8 @@ export default function SubmissionsDashboard() {
     ["Cumulative cost (USD)", money(data.summary.costUsd, "USD")],
   ], [data.summary]);
   const funnel = data.analytics || {};
+  const health = data.health || {};
+  const insights = data.analyticsInsights || {};
 
   if (auth !== "authenticated") return (
     <main style={{ minHeight:"100vh", display:"grid", placeItems:"center", background:"#f0f4f8", color:"#1a1a2e", fontFamily:"Arial,sans-serif", padding:24 }}>
@@ -133,6 +135,13 @@ export default function SubmissionsDashboard() {
         </section>
 
         <section style={{ marginBottom:18 }}>
+          <div style={{ color:"#64748b", fontSize:10, fontWeight:800, letterSpacing:".1em", textTransform:"uppercase", margin:"0 0 8px 2px" }}>Operational health</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
+            {[["Stale reports",health.stale_processing || 0],["Generation retries",health.retried_processing || 0],["Incomplete emails",health.incomplete_email_delivery || 0],["Email retries",health.retried_email_delivery || 0],["Median completion",`${Math.round(health.median_completion_seconds || 0)}s`],["P95 completion",`${Math.round(health.p95_completion_seconds || 0)}s`],["Cost today",money(health.cost_today_gbp,"GBP")]].map(([label,value]) => <div key={label} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:10, padding:"13px 15px" }}><div style={{ color:"#64748b", fontSize:10, fontWeight:800, textTransform:"uppercase" }}>{label}</div><div style={{ fontSize:21, fontWeight:800, marginTop:5 }}>{value}</div></div>)}
+          </div>
+        </section>
+
+        <section style={{ marginBottom:18 }}>
           <div style={{ color:"#64748b", fontSize:10, fontWeight:800, letterSpacing:".1em", textTransform:"uppercase", margin:"0 0 8px 2px" }}>Claude usage and estimated cost</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12 }}>
             {usageCards.map(([label,value]) => <div key={label} style={{ background:"#172554", color:"white", borderRadius:12, padding:"16px 18px" }}><div style={{ color:"#bfdbfe", fontSize:10, fontWeight:800, textTransform:"uppercase", letterSpacing:".07em" }}>{label}</div><div style={{ marginTop:7, fontSize:23, fontWeight:800 }}>{value}</div></div>)}
@@ -145,6 +154,7 @@ export default function SubmissionsDashboard() {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10 }}>
             {[['Started',funnel.started],['Reached review',funnel.reviewed],['Email gate',funnel.email_gate],['Submitted',funnel.submitted],['Completed',funnel.completed],['Failed',funnel.failed]].map(([label,value]) => <div key={label} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:10, padding:"13px 15px" }}><div style={{ color:"#64748b", fontSize:10, fontWeight:800, textTransform:"uppercase" }}>{label}</div><div style={{ fontSize:23, fontWeight:800, marginTop:5 }}>{value || 0}</div></div>)}
           </div>
+          <div style={{ color:"#64748b", fontSize:11, marginTop:8 }}>Start → submit {(100*(insights.submissionConversion || 0)).toFixed(1)}% · Start → complete {(100*(insights.completionConversion || 0)).toFixed(1)}% · Completed → shared {(100*(insights.shareConversion || 0)).toFixed(1)}% · Completed → experiments {(100*(insights.experimentConversion || 0)).toFixed(1)}%</div>
         </section>
 
         <section style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:12, padding:14, marginBottom:14, display:"grid", gridTemplateColumns:"minmax(220px,1fr) 180px 160px", gap:10 }}>
@@ -171,12 +181,22 @@ export default function SubmissionsDashboard() {
 }
 
 function SubmissionRow({ item, open, toggle }) {
+  const [retryingEmail, setRetryingEmail] = useState(false);
+  const retryEmails = async () => {
+    setRetryingEmail(true);
+    try {
+      const response = await fetch(`/api/admin/submissions/${item.id}/retry-emails`, { method:"POST" });
+      if (!response.ok) throw new Error("Could not schedule email retry");
+    } finally {
+      setRetryingEmail(false);
+    }
+  };
   const answerLabels = { idea:"The Idea", user:"The User", evidence:"Evidence", competition:"Competition", monetisation:"Monetisation", blockers:"Biggest Fear" };
   return <>
     <tr style={{ borderTop:"1px solid #e2e8f0" }}><td style={tdStyle}>{formatDate(item.created_at)}</td><td style={tdStyle}>{item.email}</td><td style={{ ...tdStyle, fontWeight:700 }}>{item.idea_name || "Pending…"}</td><td style={tdStyle}><Pill value={item.status} /></td><td style={tdStyle}><Pill value={item.verdict} /></td><td style={tdStyle}>{item.average_score == null ? "—" : `${item.average_score}/10`}</td><td style={tdStyle}>{tokens(Number(item.input_tokens || 0) + Number(item.output_tokens || 0))}</td><td style={{ ...tdStyle, fontWeight:700 }}>{money(item.cost_gbp, "GBP")}</td><td style={tdStyle}>{item.confidence == null ? "—" : `${item.confidence}%`}</td><td style={tdStyle}>{item.loops_captured ? "Yes" : "No"}</td><td style={tdStyle}><span title={item.email_error || ""} style={{ color:item.report_email_sent && item.owner_notification_sent ? "#15803d" : "#b45309", fontWeight:800 }}>{item.report_email_sent && item.owner_notification_sent ? "2/2 sent" : `${Number(item.report_email_sent)+Number(item.owner_notification_sent)}/2 sent`}</span></td><td style={tdStyle}><button onClick={toggle} style={{ ...buttonStyle, color:"#1a56db" }}>{open ? "Close" : "View"}</button></td></tr>
     {open && <tr><td colSpan="12" style={{ padding:0, background:"#f8fafc", borderTop:"1px solid #e2e8f0" }}><div style={{ padding:22, display:"grid", gridTemplateColumns:"minmax(280px,1fr) minmax(320px,1.4fr)", gap:24 }}>
       <div><h3 style={detailHeading}>Submitted answers</h3>{Object.entries(answerLabels).map(([key,label]) => <div key={key} style={{ marginBottom:15 }}><div style={detailLabel}>{label}</div><div style={detailText}>{item.answers?.[key] || "—"}</div></div>)}</div>
-      <div><h3 style={detailHeading}>Generated report</h3><div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}><Pill value={item.model || "No usage data"} /><span style={metricChip}>{tokens(item.input_tokens)} input</span><span style={metricChip}>{tokens(item.output_tokens)} output</span><span style={metricChip}>{money(item.cost_usd,"USD")}</span><span style={metricChip}>{money(item.cost_gbp,"GBP")}</span><span style={metricChip}>FX {Number(item.usd_to_gbp_rate || 0).toFixed(4)}</span><span style={metricChip}>Report email: {item.report_email_sent ? "sent" : "not sent"}</span><span style={metricChip}>Owner email: {item.owner_notification_sent ? "sent" : "not sent"}</span></div>{item.email_error && <div style={{ padding:12, background:"#fff7ed", color:"#b45309", borderRadius:8, marginBottom:12 }}>Email: {item.email_error}</div>}{item.error_message && <div style={{ padding:12, background:"#fef2f2", color:"#b91c1c", borderRadius:8, marginBottom:12 }}>{item.error_message}</div>}<pre style={{ margin:0, whiteSpace:"pre-wrap", overflowWrap:"anywhere", background:"white", border:"1px solid #e2e8f0", borderRadius:9, padding:16, fontSize:12, lineHeight:1.55, maxHeight:620, overflow:"auto" }}>{item.result ? JSON.stringify(item.result, null, 2) : "Report not completed yet."}</pre></div>
+      <div><h3 style={detailHeading}>Generated report</h3><div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}><Pill value={item.model || "No usage data"} /><span style={metricChip}>{tokens(item.input_tokens)} input</span><span style={metricChip}>{tokens(item.output_tokens)} output</span><span style={metricChip}>{money(item.cost_usd,"USD")}</span><span style={metricChip}>{money(item.cost_gbp,"GBP")}</span><span style={metricChip}>FX {Number(item.usd_to_gbp_rate || 0).toFixed(4)}</span><span style={metricChip}>Report email: {item.report_email_sent ? "sent" : "not sent"}</span><span style={metricChip}>Owner email: {item.owner_notification_sent ? "sent" : "not sent"}</span>{item.status === "completed" && (!item.report_email_sent || !item.owner_notification_sent) && <button onClick={retryEmails} disabled={retryingEmail} style={buttonStyle}>{retryingEmail ? "Scheduling…" : "Retry missing emails"}</button>}</div>{item.email_error && <div style={{ padding:12, background:"#fff7ed", color:"#b45309", borderRadius:8, marginBottom:12 }}>Email: {item.email_error}</div>}{item.error_message && <div style={{ padding:12, background:"#fef2f2", color:"#b91c1c", borderRadius:8, marginBottom:12 }}>{item.error_message}</div>}<pre style={{ margin:0, whiteSpace:"pre-wrap", overflowWrap:"anywhere", background:"white", border:"1px solid #e2e8f0", borderRadius:9, padding:16, fontSize:12, lineHeight:1.55, maxHeight:620, overflow:"auto" }}>{item.result ? JSON.stringify(item.result, null, 2) : "Report not completed yet."}</pre></div>
     </div></td></tr>}
   </>;
 }

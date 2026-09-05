@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   if (!expected || req.headers.authorization !== `Bearer ${expected}`) return res.status(401).json({ error:"Authentication required" });
   if (!hasDatabase()) return res.status(503).json({ error:"Database is not configured" });
   try {
-    const deleted = await deleteExpiredSubmissions(process.env.SUBMISSION_RETENTION_DAYS || 365);
+    const deleted = await deleteExpiredSubmissions(process.env.SUBMISSION_RETENTION_DAYS || 365, process.env.ANALYTICS_RETENTION_DAYS || 90);
     return res.status(200).json({ deleted });
   } catch (error) {
     console.error("Retention cleanup error:", error);

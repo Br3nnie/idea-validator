@@ -19,9 +19,11 @@ Run `npm test`, `npm run test:e2e`, `npm run lint`, `npm run build`, and `npm au
 ## Architecture
 
 - `POST /api/submissions` validates the request, verifies Turnstile when enabled, enforces durable quotas, and creates one record per browser-generated request key. It returns `202` while the three parallel Anthropic passes and email delivery continue in the function lifecycle.
+- Processing uses a database lease and bounded exponential retries. A protected recovery cron reclaims interrupted work and retries incomplete Loops deliveries without generating duplicate emails.
 - `GET /api/submissions/[requestKey]` lets the browser reconnect to an in-progress report after refresh. Draft answers are retained in browser storage until completion.
 - Completed reports include an editable validation-experiment workspace and can create one active, revocable, 30-day private share link. Share responses exclude submitter details and are marked `noindex`.
 - The dashboard includes a privacy-preserving 30-day funnel based on hashed, anonymous session IDs.
+- The dashboard can manually retry missing customer or owner emails after automatic delivery attempts are exhausted.
 - `/api/validate` is retired. The browser cannot submit arbitrary prompts or mark records complete.
 - `/admin/submissions` uses a signed, HttpOnly admin session. Login throttling is stored in Postgres rather than function memory.
 - `/api/maintenance/retention` is called daily by Vercel Cron and removes expired submissions.
@@ -33,11 +35,13 @@ Required: `ANTHROPIC_API_KEY`, `DATABASE_URL` or `POSTGRES_URL`, `LOOPS_API_KEY`
 Optional configuration:
 
 - `LOOPS_MAILING_LIST_ID` — used only when the submitter explicitly opts into updates
+- `LOOPS_EXPERIMENT_REMINDER_ID` — optional transactional template for deadline reminders; receives separate `ideaName`, `hypothesis`, `deadline`, `successThreshold`, and `reportUrl` variables
 - `ANTHROPIC_MODEL` — defaults to `claude-sonnet-4-6`
 - `ANTHROPIC_INPUT_USD_PER_MILLION` — defaults to `3`
 - `ANTHROPIC_OUTPUT_USD_PER_MILLION` — defaults to `15`
 - `USD_TO_GBP_RATE` — defaults to `0.75`
 - `SUBMISSION_RETENTION_DAYS` — defaults to `365`, constrained to 30–3650
+- `ANALYTICS_RETENTION_DAYS` — defaults to `90`, constrained to 30–365; analytics identifiers are hashed and properties are limited to coarse path, referrer host, and viewport class
 - `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` — enable Cloudflare Turnstile when both are configured
 - `DAILY_SPEND_ALERT_GBP` — daily generation-cost warning threshold; defaults to `5`
 - `SPEND_ALERT_WEBHOOK_URL` — optional JSON webhook that receives the daily threshold alert
