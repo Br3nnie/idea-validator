@@ -19,6 +19,14 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("en-GB", { dateStyle:"medium", timeStyle:"short" }).format(new Date(value));
 }
 
+function money(value, currency) {
+  return new Intl.NumberFormat("en-GB", { style:"currency", currency, minimumFractionDigits:4, maximumFractionDigits:4 }).format(Number(value || 0));
+}
+
+function tokens(value) {
+  return new Intl.NumberFormat("en-GB").format(Number(value || 0));
+}
+
 function csvCell(value) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -27,7 +35,7 @@ export default function SubmissionsDashboard() {
   const [auth, setAuth] = useState("checking");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [data, setData] = useState({ submissions:[], summary:{ total:0, processing:0, completed:0, failed:0 } });
+  const [data, setData] = useState({ submissions:[], summary:{ total:0, processing:0, completed:0, failed:0, inputTokens:0, outputTokens:0, costUsd:0, costGbp:0, averageCostGbp:0 } });
   const [filters, setFilters] = useState({ search:"", status:"", verdict:"" });
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -74,18 +82,25 @@ export default function SubmissionsDashboard() {
 
   const logout = async () => {
     await fetch("/api/admin/login", { method:"DELETE" });
-    setData({ submissions:[], summary:{ total:0, processing:0, completed:0, failed:0 } });
+    setData({ submissions:[], summary:{ total:0, processing:0, completed:0, failed:0, inputTokens:0, outputTokens:0, costUsd:0, costGbp:0, averageCostGbp:0 } });
     setAuth("loggedOut");
   };
 
   const exportCsv = () => {
-    const headings = ["created_at","status","email","idea_name","verdict","average_score","confidence","loops_captured","answers","result","error_message"];
+    const headings = ["created_at","status","email","idea_name","verdict","average_score","confidence","loops_captured","model","input_tokens","output_tokens","cost_usd","usd_to_gbp_rate","cost_gbp","answers","result","error_message"];
     const lines = [headings.map(csvCell).join(","), ...data.submissions.map(item => headings.map(key => csvCell(typeof item[key] === "object" ? JSON.stringify(item[key]) : item[key])).join(","))];
     const url = URL.createObjectURL(new Blob([lines.join("\n")], { type:"text/csv;charset=utf-8" }));
     const link = document.createElement("a"); link.href = url; link.download = `test-my-idea-submissions-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(url);
   };
 
   const cards = useMemo(() => [["Total",data.summary.total],["Processing",data.summary.processing],["Completed",data.summary.completed],["Failed",data.summary.failed]], [data.summary]);
+  const usageCards = useMemo(() => [
+    ["Input tokens", tokens(data.summary.inputTokens)],
+    ["Output tokens", tokens(data.summary.outputTokens)],
+    ["Average cost / submission", money(data.summary.averageCostGbp, "GBP")],
+    ["Cumulative cost", money(data.summary.costGbp, "GBP")],
+    ["Cumulative cost (USD)", money(data.summary.costUsd, "USD")],
+  ], [data.summary]);
 
   if (auth !== "authenticated") return (
     <main style={{ minHeight:"100vh", display:"grid", placeItems:"center", background:"#f0f4f8", color:"#1a1a2e", fontFamily:"Arial,sans-serif", padding:24 }}>
@@ -113,6 +128,14 @@ export default function SubmissionsDashboard() {
           {cards.map(([label,value]) => <div key={label} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:12, padding:"18px 20px" }}><div style={{ color:"#64748b", fontSize:11, fontWeight:800, textTransform:"uppercase", letterSpacing:".08em" }}>{label}</div><div style={{ marginTop:6, fontSize:30, fontWeight:800 }}>{value}</div></div>)}
         </section>
 
+        <section style={{ marginBottom:18 }}>
+          <div style={{ color:"#64748b", fontSize:10, fontWeight:800, letterSpacing:".1em", textTransform:"uppercase", margin:"0 0 8px 2px" }}>Claude usage and estimated cost</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12 }}>
+            {usageCards.map(([label,value]) => <div key={label} style={{ background:"#172554", color:"white", borderRadius:12, padding:"16px 18px" }}><div style={{ color:"#bfdbfe", fontSize:10, fontWeight:800, textTransform:"uppercase", letterSpacing:".07em" }}>{label}</div><div style={{ marginTop:7, fontSize:23, fontWeight:800 }}>{value}</div></div>)}
+          </div>
+          <p style={{ color:"#64748b", fontSize:10, margin:"7px 2px 0" }}>Estimated using Claude Sonnet 4.6 standard pricing ($3 input / $15 output per million tokens) and the stored USD→GBP rate.</p>
+        </section>
+
         <section style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:12, padding:14, marginBottom:14, display:"grid", gridTemplateColumns:"minmax(220px,1fr) 180px 160px", gap:10 }}>
           <input aria-label="Search" placeholder="Search email or idea name" value={filters.search} onChange={event => setFilters({ ...filters, search:event.target.value })} onKeyDown={event => event.key === "Enter" && load()} style={inputStyle} />
           <select value={filters.status} onChange={event => { const next={ ...filters, status:event.target.value }; setFilters(next); load(next); }} style={inputStyle}><option value="">All statuses</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="failed">Failed</option></select>
@@ -121,7 +144,7 @@ export default function SubmissionsDashboard() {
 
         {error && <div style={{ background:"#fef2f2", color:"#b91c1c", padding:14, borderRadius:9, marginBottom:12 }}>{error}</div>}
         <section style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:12, overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:980 }}><thead><tr>{["Created","Submitter","Idea","Status","Verdict","Score","Confidence","Loops",""].map(label => <th key={label} style={thStyle}>{label}</th>)}</tr></thead>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1180 }}><thead><tr>{["Created","Submitter","Idea","Status","Verdict","Score","Tokens","Cost","Confidence","Loops",""].map(label => <th key={label} style={thStyle}>{label}</th>)}</tr></thead>
             <tbody>{data.submissions.map(item => <SubmissionRow key={item.id} item={item} open={expanded === item.id} toggle={() => setExpanded(expanded === item.id ? null : item.id)} />)}</tbody>
           </table>
           {!data.submissions.length && <div style={{ padding:48, textAlign:"center", color:"#64748b" }}>{loading ? "Loading submissions…" : "No submissions match these filters."}</div>}
@@ -136,10 +159,10 @@ export default function SubmissionsDashboard() {
 function SubmissionRow({ item, open, toggle }) {
   const answerLabels = { idea:"The Idea", user:"The User", evidence:"Evidence", competition:"Competition", monetisation:"Monetisation", blockers:"Biggest Fear" };
   return <>
-    <tr style={{ borderTop:"1px solid #e2e8f0" }}><td style={tdStyle}>{formatDate(item.created_at)}</td><td style={tdStyle}>{item.email}</td><td style={{ ...tdStyle, fontWeight:700 }}>{item.idea_name || "Pending…"}</td><td style={tdStyle}><Pill value={item.status} /></td><td style={tdStyle}><Pill value={item.verdict} /></td><td style={tdStyle}>{item.average_score == null ? "—" : `${item.average_score}/10`}</td><td style={tdStyle}>{item.confidence == null ? "—" : `${item.confidence}%`}</td><td style={tdStyle}>{item.loops_captured ? "Yes" : "No"}</td><td style={tdStyle}><button onClick={toggle} style={{ ...buttonStyle, color:"#1a56db" }}>{open ? "Close" : "View"}</button></td></tr>
-    {open && <tr><td colSpan="9" style={{ padding:0, background:"#f8fafc", borderTop:"1px solid #e2e8f0" }}><div style={{ padding:22, display:"grid", gridTemplateColumns:"minmax(280px,1fr) minmax(320px,1.4fr)", gap:24 }}>
+    <tr style={{ borderTop:"1px solid #e2e8f0" }}><td style={tdStyle}>{formatDate(item.created_at)}</td><td style={tdStyle}>{item.email}</td><td style={{ ...tdStyle, fontWeight:700 }}>{item.idea_name || "Pending…"}</td><td style={tdStyle}><Pill value={item.status} /></td><td style={tdStyle}><Pill value={item.verdict} /></td><td style={tdStyle}>{item.average_score == null ? "—" : `${item.average_score}/10`}</td><td style={tdStyle}>{tokens(Number(item.input_tokens || 0) + Number(item.output_tokens || 0))}</td><td style={{ ...tdStyle, fontWeight:700 }}>{money(item.cost_gbp, "GBP")}</td><td style={tdStyle}>{item.confidence == null ? "—" : `${item.confidence}%`}</td><td style={tdStyle}>{item.loops_captured ? "Yes" : "No"}</td><td style={tdStyle}><button onClick={toggle} style={{ ...buttonStyle, color:"#1a56db" }}>{open ? "Close" : "View"}</button></td></tr>
+    {open && <tr><td colSpan="11" style={{ padding:0, background:"#f8fafc", borderTop:"1px solid #e2e8f0" }}><div style={{ padding:22, display:"grid", gridTemplateColumns:"minmax(280px,1fr) minmax(320px,1.4fr)", gap:24 }}>
       <div><h3 style={detailHeading}>Submitted answers</h3>{Object.entries(answerLabels).map(([key,label]) => <div key={key} style={{ marginBottom:15 }}><div style={detailLabel}>{label}</div><div style={detailText}>{item.answers?.[key] || "—"}</div></div>)}</div>
-      <div><h3 style={detailHeading}>Generated report</h3>{item.error_message && <div style={{ padding:12, background:"#fef2f2", color:"#b91c1c", borderRadius:8, marginBottom:12 }}>{item.error_message}</div>}<pre style={{ margin:0, whiteSpace:"pre-wrap", overflowWrap:"anywhere", background:"white", border:"1px solid #e2e8f0", borderRadius:9, padding:16, fontSize:12, lineHeight:1.55, maxHeight:620, overflow:"auto" }}>{item.result ? JSON.stringify(item.result, null, 2) : "Report not completed yet."}</pre></div>
+      <div><h3 style={detailHeading}>Generated report</h3><div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}><Pill value={item.model || "No usage data"} /><span style={metricChip}>{tokens(item.input_tokens)} input</span><span style={metricChip}>{tokens(item.output_tokens)} output</span><span style={metricChip}>{money(item.cost_usd,"USD")}</span><span style={metricChip}>{money(item.cost_gbp,"GBP")}</span><span style={metricChip}>FX {Number(item.usd_to_gbp_rate || 0).toFixed(4)}</span></div>{item.error_message && <div style={{ padding:12, background:"#fef2f2", color:"#b91c1c", borderRadius:8, marginBottom:12 }}>{item.error_message}</div>}<pre style={{ margin:0, whiteSpace:"pre-wrap", overflowWrap:"anywhere", background:"white", border:"1px solid #e2e8f0", borderRadius:9, padding:16, fontSize:12, lineHeight:1.55, maxHeight:620, overflow:"auto" }}>{item.result ? JSON.stringify(item.result, null, 2) : "Report not completed yet."}</pre></div>
     </div></td></tr>}
   </>;
 }
@@ -151,3 +174,4 @@ const tdStyle = { padding:"13px 14px", fontSize:12, verticalAlign:"middle", whit
 const detailHeading = { margin:"0 0 16px", color:"#1a1a2e", fontSize:17 };
 const detailLabel = { color:"#64748b", fontSize:10, fontWeight:800, letterSpacing:".08em", textTransform:"uppercase", marginBottom:4 };
 const detailText = { color:"#334155", fontSize:13, lineHeight:1.55, whiteSpace:"pre-wrap" };
+const metricChip = { background:"#e2e8f0", color:"#334155", borderRadius:99, padding:"5px 8px", fontSize:10, fontWeight:700 };

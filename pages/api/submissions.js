@@ -77,12 +77,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "PUT") {
-    const { id, status, result, error } = req.body || {};
+    const { id, status, result, usage, error } = req.body || {};
     if (!id) return res.status(400).json({ error: "Submission ID is required" });
     if (!hasDatabase()) return res.status(503).json({ error: "Submission storage is not configured" });
 
     try {
-      if (status === "completed" && result) await completeSubmission(id, result);
+      if (status === "completed" && result) await completeSubmission(id, result, usage);
       else if (status === "failed") await failSubmission(id, error);
       else return res.status(400).json({ error: "Invalid submission update" });
       return res.status(200).json({ saved: true });

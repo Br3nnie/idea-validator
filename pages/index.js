@@ -43,7 +43,8 @@ async function callAPI(prompt) {
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
-  return data;
+  const { _usage, ...result } = data;
+  return { result, usage: _usage || { model:"claude-sonnet-4-6", inputTokens:0, outputTokens:0 } };
 }
 
 function Matrix({ scoring, ideaName }) {
@@ -237,13 +238,19 @@ export default function TestMyIdea() {
     const ctx = STEPS.map(s => `${s.label}: ${a[s.id]}`).join("\n");
     try {
       setStatus("Analysing the idea...");
-      const overview = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with keys: ideaName, tagline, problem, solution, differentiation. Short strings only.`);
+      const overviewCall = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with keys: ideaName, tagline, problem, solution, differentiation. Short strings only.`);
       setStatus("Mapping assumptions...");
-      const part2 = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"assumptions": array of 4 objects {label,assumption,risk("low"|"medium"|"high"),evidence}\n"validationSteps": array of 4 objects {label,description,effort,priority("high"|"medium")}`);
+      const assumptionsCall = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"assumptions": array of 4 objects {label,assumption,risk("low"|"medium"|"high"),evidence}\n"validationSteps": array of 4 objects {label,description,effort,priority("high"|"medium")}`);
       setStatus("Reaching verdict...");
-      const part3 = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"scoring": array of 6 objects {name,score(1-10),note} — names must be exactly: "Problem clarity","Market size","Differentiation","Technical feasibility","Monetisation fit","Speed to test"\n"verdict": "GO"|"TEST"|"KILL"\n"confidence": integer 1-100\n"rationale": 2 sentence string\n"nextSteps": array of 5 action strings`);
-      const completedModel = { ...overview, ...part2, ...part3 };
-      await updateSubmission({ status: "completed", result: completedModel });
+      const verdictCall = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"scoring": array of 6 objects {name,score(1-10),note} — names must be exactly: "Problem clarity","Market size","Differentiation","Technical feasibility","Monetisation fit","Speed to test"\n"verdict": "GO"|"TEST"|"KILL"\n"confidence": integer 1-100\n"rationale": 2 sentence string\n"nextSteps": array of 5 action strings`);
+      const completedModel = { ...overviewCall.result, ...assumptionsCall.result, ...verdictCall.result };
+      const calls = [overviewCall, assumptionsCall, verdictCall];
+      const usage = {
+        model: calls.find(call => call.usage.model)?.usage.model || "claude-sonnet-4-6",
+        inputTokens: calls.reduce((total, call) => total + Number(call.usage.inputTokens || 0), 0),
+        outputTokens: calls.reduce((total, call) => total + Number(call.usage.outputTokens || 0), 0),
+      };
+      await updateSubmission({ status: "completed", result: completedModel, usage });
       setModel(completedModel);
       setPhase("results"); setTab("overview");
     } catch (err) {

@@ -30,7 +30,14 @@ export default async function handler(req, res) {
 
     let jsonStr = text.slice(start, end + 1);
     try {
-      return res.status(200).json(JSON.parse(jsonStr));
+      return res.status(200).json({
+        ...JSON.parse(jsonStr),
+        _usage: {
+          model: data.model || "claude-sonnet-4-6",
+          inputTokens: Number(data.usage?.input_tokens || 0),
+          outputTokens: Number(data.usage?.output_tokens || 0),
+        },
+      });
     } catch (parseErr) {
       // Truncated mid-array/object — likely hit max_tokens. Surface a clear error.
       return res.status(500).json({ error: `Response was cut off before completing (stop_reason: ${data.stop_reason}). Try again — this is usually a one-off.` });

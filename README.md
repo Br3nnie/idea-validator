@@ -48,6 +48,9 @@ Connect a Neon Postgres resource to the Vercel project and provide `DATABASE_URL
 - the email address and all six answers;
 - the complete generated validation model;
 - verdict, confidence, and average score for filtering;
+- input/output token usage plus estimated USD and GBP cost;
 - Loops capture status, page/referrer metadata, and generation failures.
 
 Storage is server-only. If no database is configured or it is temporarily unavailable, Loops capture and idea testing continue to work, and the failure is written to the Vercel function logs.
+
+Cost estimates use Claude Sonnet 4.6 standard pricing ($3 per million input tokens and $15 per million output tokens). Set `USD_TO_GBP_RATE` in Vercel to control the GBP conversion; it defaults to `0.75` and is stored with each submission.
