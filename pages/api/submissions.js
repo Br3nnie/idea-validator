@@ -3,7 +3,9 @@ import {
   createSubmission,
   failSubmission,
   hasDatabase,
+  saveEmailDelivery,
 } from "../../lib/submissions";
+import { sendCompletedReport, sendOwnerNotification } from "../../lib/loops";
 
 const REQUIRED_ANSWERS = ["idea", "user", "evidence", "competition", "monetisation", "blockers"];
 
@@ -82,7 +84,19 @@ export default async function handler(req, res) {
     if (!hasDatabase()) return res.status(503).json({ error: "Submission storage is not configured" });
 
     try {
-      if (status === "completed" && result) await completeSubmission(id, result, usage);
+      if (status === "completed" && result) {
+        const submission = await completeSubmission(id, result, usage);
+        if (!submission) return res.status(404).json({ error: "Submission not found" });
+
+        const reportDelivery = submission.report_email_sent
+          ? { sent:true }
+          : await sendCompletedReport({ id, email:submission.email, result, averageScore:submission.average_score });
+        const ownerDelivery = submission.owner_notification_sent
+          ? { sent:true }
+          : await sendOwnerNotification({ id, email:submission.email, result, averageScore:submission.average_score, costGbp:submission.cost_gbp, createdAt:submission.created_at });
+        const deliveryErrors = [reportDelivery.error, ownerDelivery.error].filter(Boolean).join("; ");
+        await saveEmailDelivery(id, { reportSent:reportDelivery.sent, ownerSent:ownerDelivery.sent, error:deliveryErrors });
+      }
       else if (status === "failed") await failSubmission(id, error);
       else return res.status(400).json({ error: "Invalid submission update" });
       return res.status(200).json({ saved: true });

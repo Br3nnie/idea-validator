@@ -38,8 +38,13 @@ The email gate appears after the sixth question and before the AI model is gener
 
 - `LOOPS_API_KEY`
 - `LOOPS_MAILING_LIST_ID` (optional)
+- `LOOPS_REPORT_TRANSACTIONAL_ID`
+- `LOOPS_OWNER_TRANSACTIONAL_ID`
+- `OWNER_NOTIFICATION_EMAIL`
 
 Captured contacts receive the source `test-my-idea` and an abbreviated idea summary. The assessment still works if Loops is not configured.
+
+After a report completes, Loops sends the complete assessment to the submitter and a concise notification to the owner. Both sends use idempotency keys, and delivery status/errors are stored on the submission and shown in the admin dashboard.
 
 ## Submission storage
 
