@@ -40,3 +40,14 @@ The email gate appears after the sixth question and before the AI model is gener
 - `LOOPS_MAILING_LIST_ID` (optional)
 
 Captured contacts receive the source `idea-validator` and an abbreviated idea summary. The validation still works if Loops is not configured.
+
+## Submission storage
+
+Connect a Neon Postgres resource to the Vercel project and provide `DATABASE_URL` (or `POSTGRES_URL`). The app creates its `submissions` table on the first captured submission and stores:
+
+- the email address and all six answers;
+- the complete generated validation model;
+- verdict, confidence, and average score for filtering;
+- Loops capture status, page/referrer metadata, and generation failures.
+
+Storage is server-only. If no database is configured or it is temporarily unavailable, Loops capture and idea validation continue to work, and the failure is written to the Vercel function logs.

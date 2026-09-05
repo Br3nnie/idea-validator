@@ -203,6 +203,7 @@ export default function IdeaValidator() {
   const [status, setStatus] = useState("");
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
+  const submissionId = useRef(null);
   const ref = useRef(null);
 
   useEffect(() => { if (phase === "intake") ref.current?.focus(); }, [phase, step]);
@@ -217,6 +218,19 @@ export default function IdeaValidator() {
 
   const keyDown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && answer.trim().length >= MIN_ANSWER_CHARS) next(); };
 
+  const updateSubmission = async (payload) => {
+    if (!submissionId.current) return;
+    try {
+      await fetch("/api/submissions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: submissionId.current, ...payload }),
+      });
+    } catch (_) {
+      // Saving must not prevent someone seeing a completed validation.
+    }
+  };
+
   const generate = async (a) => {
     setPhase("generating"); setError(null);
     const ctx = STEPS.map(s => `${s.label}: ${a[s.id]}`).join("\n");
@@ -227,24 +241,33 @@ export default function IdeaValidator() {
       const part2 = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"assumptions": array of 4 objects {label,assumption,risk("low"|"medium"|"high"),evidence}\n"validationSteps": array of 4 objects {label,description,effort,priority("high"|"medium")}`);
       setStatus("Reaching verdict...");
       const part3 = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"scoring": array of 6 objects {name,score(1-10),note} — names must be exactly: "Problem clarity","Market size","Differentiation","Technical feasibility","Monetisation fit","Speed to test"\n"verdict": "GO"|"TEST"|"KILL"\n"confidence": integer 1-100\n"rationale": 2 sentence string\n"nextSteps": array of 5 action strings`);
-      setModel({ ...overview, ...part2, ...part3 });
+      const completedModel = { ...overview, ...part2, ...part3 };
+      await updateSubmission({ status: "completed", result: completedModel });
+      setModel(completedModel);
       setPhase("results"); setTab("overview");
     } catch (err) {
+      await updateSubmission({ status: "failed", error: err.message });
       setError(err.message);
       setPhase("intake"); setStep(STEPS.length - 1);
     }
   };
 
-  const captureContact = async (submittedEmail) => {
-    const ideaSummary = STEPS.map(s => `${s.label}: ${answers[s.id] || ""}`).join("\n");
+  const createSubmission = async (submittedEmail) => {
     try {
-      await fetch("/api/validate", {
+      const response = await fetch("/api/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captureOnly: true, email: submittedEmail, ideaSummary }),
+        body: JSON.stringify({
+          email: submittedEmail,
+          answers,
+          pageUrl: window.location.href,
+          referrer: document.referrer,
+        }),
       });
+      const data = await response.json();
+      if (response.ok) submissionId.current = data.id || null;
     } catch (_) {
-      // Contact capture must not prevent someone seeing a validation result.
+      // Capture/storage must not prevent someone seeing a validation result.
     }
   };
 
@@ -254,11 +277,11 @@ export default function IdeaValidator() {
       return;
     }
     setEmailError("");
-    await captureContact(email);
+    await createSubmission(email);
     generate(answers);
   };
 
-  const reset = () => { setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setEmailError(""); };
+  const reset = () => { submissionId.current = null; setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setEmailError(""); };
 
   const avg = model?.scoring ? Math.round(model.scoring.reduce((s,c) => s+c.score,0)/model.scoring.length) : 0;
 
@@ -373,6 +396,7 @@ export default function IdeaValidator() {
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && submitEmail()} placeholder="Your work email address" autoFocus
               style={{ width:"100%", boxSizing:"border-box", background:"#f8fafc", border:"1.5px solid #e2e8f0", borderRadius:10, color:"#1a1a2e", fontSize:15, padding:"14px 16px", outline:"none" }} />
             {emailError && <p style={{ color:"#b91c1c", fontSize:12, margin:"8px 0 0" }}>{emailError}</p>}
+            <p style={{ color:"#64748b", fontSize:11, lineHeight:1.5, margin:"9px 0 0" }}>We securely store your answers and generated report so we can provide and improve this service.</p>
             <button onClick={submitEmail} style={{ width:"100%", border:0, borderRadius:50, background:"#1a56db", color:"#fff", cursor:"pointer", fontSize:15, fontWeight:600, marginTop:20, padding:"14px 28px" }}>Show my assessment →</button>
             <button onClick={() => { setPhase("intake"); setStep(STEPS.length - 1); setAnswer(answers[STEPS[STEPS.length - 1].id] || ""); }} style={{ width:"100%", background:"transparent", border:"1.5px solid #1a56db", borderRadius:50, color:"#1a56db", cursor:"pointer", fontSize:14, fontWeight:600, marginTop:10, padding:"12px 28px" }}>← Back to answers</button>
           </section>
