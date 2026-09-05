@@ -1,61 +1,67 @@
 # Test My Idea
 
-AI-powered startup idea testing. Answer 6 questions, get a full decision model with assumptions, scoring, and a Go/Test/Kill verdict.
+AI-powered startup idea testing. A founder answers six questions and receives a structured decision model, report email, assumptions, scores, validation plan, and Go/Test/Kill verdict.
 
-## Deploy to Vercel
+Production: [www.testmyidea.co.uk](https://www.testmyidea.co.uk)
 
-### 1. Push to GitHub
+## Local development
+
+Requires Node.js 24 and npm.
+
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
-gh repo create idea-validator --public --push
-```
-
-### 2. Deploy on Vercel
-- Go to vercel.com → Add New Project
-- Import your GitHub repo
-- Click Deploy (no build settings needed — Next.js auto-detected)
-
-### 3. Add your API key
-- In Vercel dashboard → your project → Settings → Environment Variables
-- Add: `ANTHROPIC_API_KEY` = your key from console.anthropic.com
-- Redeploy (Settings → Deployments → Redeploy)
-
-That's it. Your app is live at `your-project.vercel.app`.
-
-## Local dev
-```bash
-npm install
-echo "ANTHROPIC_API_KEY=your_key_here" > .env.local
+npm ci
+npm run migrate
 npm run dev
 ```
-Open http://localhost:3000
 
-## Email capture
+Run `npm test`, `npm run lint`, `npm run build`, and `npm audit --omit=dev` before release.
 
-The email gate appears after the sixth question and before the AI model is generated. To save captures to Loops, configure these Vercel environment variables:
+## Architecture
 
-- `LOOPS_API_KEY`
-- `LOOPS_MAILING_LIST_ID` (optional)
-- `LOOPS_REPORT_TRANSACTIONAL_ID`
-- `LOOPS_OWNER_TRANSACTIONAL_ID`
-- `OWNER_NOTIFICATION_EMAIL`
+- `POST /api/submissions` validates the request, enforces durable per-IP and per-email quotas, captures the contact, creates the database record, runs three server-side Anthropic passes, validates the model output, completes the record, and sends both Loops emails.
+- `/api/validate` is retired. The browser cannot submit arbitrary prompts or mark records complete.
+- `/admin/submissions` uses a signed, HttpOnly admin session. Login throttling is stored in Postgres rather than function memory.
+- `/api/maintenance/retention` is called daily by Vercel Cron and removes expired submissions.
 
-Captured contacts receive the source `test-my-idea` and an abbreviated idea summary. The assessment still works if Loops is not configured.
+## Environment variables
 
-After a report completes, Loops sends the complete assessment to the submitter and a concise notification to the owner. Both sends use idempotency keys, and delivery status/errors are stored on the submission and shown in the admin dashboard.
+Required: `ANTHROPIC_API_KEY`, `DATABASE_URL` or `POSTGRES_URL`, `LOOPS_API_KEY`, `LOOPS_REPORT_TRANSACTIONAL_ID`, `LOOPS_OWNER_TRANSACTIONAL_ID`, `OWNER_NOTIFICATION_EMAIL`, `ADMIN_DASHBOARD_PASSWORD` (at least 12 characters), and `CRON_SECRET`.
 
-## Submission storage
+Optional configuration:
 
-Connect a Neon Postgres resource to the Vercel project and provide `DATABASE_URL` (or `POSTGRES_URL`). The app creates its `submissions` table on the first captured submission and stores:
+- `LOOPS_MAILING_LIST_ID` — used only when the submitter explicitly opts into updates
+- `ANTHROPIC_MODEL` — defaults to `claude-sonnet-4-6`
+- `ANTHROPIC_INPUT_USD_PER_MILLION` — defaults to `3`
+- `ANTHROPIC_OUTPUT_USD_PER_MILLION` — defaults to `15`
+- `USD_TO_GBP_RATE` — defaults to `0.75`
+- `SUBMISSION_RETENTION_DAYS` — defaults to `365`, constrained to 30–3650
 
-- the email address and all six answers;
-- the complete generated validation model;
-- verdict, confidence, and average score for filtering;
-- input/output token usage plus estimated USD and GBP cost;
-- Loops capture status, page/referrer metadata, and generation failures.
+## Database migrations
 
-Storage is server-only. If no database is configured or it is temporarily unavailable, Loops capture and idea testing continue to work, and the failure is written to the Vercel function logs.
+Schema changes are versioned in `scripts/migrate.mjs` and must run before deployment:
 
-Cost estimates use Claude Sonnet 4.6 standard pricing ($3 per million input tokens and $15 per million output tokens). Set `USD_TO_GBP_RATE` in Vercel to control the GBP conversion; it defaults to `0.75` and is stored with each submission.
+```bash
+vercel env run -- npm run migrate
+```
+
+Application requests verify that the required tables exist but do not run DDL.
+
+## Loops templates
+
+- Customer report: `cmto9lthf0k6o0jzbgwmje05n`
+- Owner notification: `cmto9smil0kd80jvselbch6x4`
+
+The customer payload uses separate variables for every section and list row. Its template must include `assumption1`–`assumption4`, `score1`–`score6`, `validation1`–`validation4`, and `next1`–`next5`. Do not replace these with one large report variable.
+
+## Data handling
+
+Submissions contain email addresses, founder answers, generated reports, request metadata, delivery status, and usage/cost information. The public privacy notice explains processing, subprocessors, and deletion requests. Marketing-list enrolment is optional and separate from delivery of the requested report.
+
+Records are deleted by the retention cron after the configured period. Requests for access, correction, or deletion are handled through `brendan@corbelle.ai`.
+
+## Release process
+
+1. Run the migration when schema changes exist.
+2. Run tests, lint, build, and audit.
+3. Merge through the protected production branch.
+4. Confirm the Vercel deployment is Ready and smoke-test the homepage, admin authentication, one real report, and both email deliveries.

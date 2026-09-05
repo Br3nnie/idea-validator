@@ -5,9 +5,8 @@ import {
   sessionCookie,
   validAdminSession,
 } from "../../../lib/adminAuth";
+import { consumeRateLimit, hasDatabase } from "../../../lib/submissions";
 
-const attempts = new Map();
-const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
 function clientKey(req) {
@@ -29,18 +28,18 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   if (!adminConfigured()) return res.status(503).json({ error: "Dashboard password is not configured" });
 
-  const key = clientKey(req);
-  const now = Date.now();
-  const recent = (attempts.get(key) || []).filter(timestamp => now - timestamp < WINDOW_MS);
-  if (recent.length >= MAX_ATTEMPTS) return res.status(429).json({ error: "Too many attempts. Try again later." });
+  if (!hasDatabase()) return res.status(503).json({ error: "Secure login is temporarily unavailable" });
+  const rate = await consumeRateLimit({ scope:"admin-login", identifier:clientKey(req), limit:MAX_ATTEMPTS, windowSeconds:900 });
+  if (!rate.allowed) {
+    res.setHeader("Retry-After", "900");
+    return res.status(429).json({ error: "Too many attempts. Try again later." });
+  }
 
   if (!passwordMatches(req.body?.password)) {
-    attempts.set(key, [...recent, now]);
     await new Promise(resolve => setTimeout(resolve, 600));
     return res.status(401).json({ error: "Incorrect password" });
   }
 
-  attempts.delete(key);
   res.setHeader("Set-Cookie", sessionCookie(createAdminSession()));
   return res.status(200).json({ authenticated: true });
 }

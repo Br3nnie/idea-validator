@@ -11,6 +11,8 @@ export default async function handler(req, res) {
       search: req.query.search,
       status: req.query.status,
       verdict: req.query.verdict,
+      page: req.query.page,
+      pageSize: req.query.pageSize,
     });
     return res.status(200).json(data);
   } catch (error) {

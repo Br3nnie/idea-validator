@@ -38,25 +38,26 @@ export default function SubmissionsDashboard() {
   const [data, setData] = useState({ submissions:[], summary:{ total:0, processing:0, completed:0, failed:0, inputTokens:0, outputTokens:0, costUsd:0, costGbp:0, averageCostGbp:0 } });
   const [filters, setFilters] = useState({ search:"", status:"", verdict:"" });
   const [expanded, setExpanded] = useState(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const load = useCallback(async (activeFilters = filters) => {
+  const load = useCallback(async (activeFilters = filters, targetPage = page) => {
     setLoading(true);
-    const query = new URLSearchParams(Object.entries(activeFilters).filter(([, value]) => value));
+    const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(activeFilters).filter(([, value]) => value)), page:String(targetPage), pageSize:"50" });
     try {
       const response = await fetch(`/api/admin/submissions?${query}`, { cache:"no-store" });
       if (response.status === 401) { setAuth("loggedOut"); return; }
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not load submissions");
-      setData(payload); setAuth("authenticated"); setError(""); setLastUpdated(new Date());
+      setData(payload); setPage(targetPage); setAuth("authenticated"); setError(""); setLastUpdated(new Date());
     } catch (loadError) {
       setError(loadError.message);
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, page]);
 
   useEffect(() => {
     fetch("/api/admin/login", { cache:"no-store" }).then(response => response.json()).then(result => {
@@ -64,6 +65,8 @@ export default function SubmissionsDashboard() {
       else if (result.authenticated) load();
       else setAuth("loggedOut");
     }).catch(() => setAuth("loggedOut"));
+  // Session discovery intentionally runs only on mount; polling below owns subsequent refreshes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -149,7 +152,10 @@ export default function SubmissionsDashboard() {
           </table>
           {!data.submissions.length && <div style={{ padding:48, textAlign:"center", color:"#64748b" }}>{loading ? "Loading submissions…" : "No submissions match these filters."}</div>}
         </section>
-        <p style={{ color:"#94a3b8", fontSize:11, marginTop:10 }}>Showing the newest {data.submissions.length} matching submissions (maximum 250).</p>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginTop:10 }}>
+            <p style={{ color:"#94a3b8", fontSize:11, margin:0 }}>Showing {data.submissions.length} of {data.pagination?.total || 0} matching submissions.</p>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}><button disabled={page <= 1 || loading} onClick={() => load(filters, page - 1)} style={buttonStyle}>Previous</button><span style={{ fontSize:12 }}>Page {page}</span><button disabled={loading || page * 50 >= (data.pagination?.total || 0)} onClick={() => load(filters, page + 1)} style={buttonStyle}>Next</button></div>
+          </div>
       </div>
       <style>{`@media(max-width:760px){section:has(> input[aria-label="Search"]){grid-template-columns:1fr!important}}`}</style>
     </main>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import Head from "next/head";
+import Link from "next/link";
 
 const STEPS = [
   { id: "idea", label: "The Idea", question: "Describe your idea in plain language. What is it, who is it for, and what problem does it solve?" },
@@ -33,18 +34,6 @@ function getQuadrant(market, exec) {
   if (market >= 6 && exec < 6)  return { label: "PARTNER UP", desc: "Big opportunity, hard to execute alone", color: "#b45309" };
   if (market < 6  && exec >= 6) return { label: "LIFESTYLE", desc: "Easy to build, limited upside", color: "#2563eb" };
   return { label: "RETHINK", desc: "Hard to build, small market", color: "#dc2626" };
-}
-
-async function callAPI(prompt) {
-  const res = await fetch("/api/validate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  const { _usage, ...result } = data;
-  return { result, usage: _usage || { model:"claude-sonnet-4-6", inputTokens:0, outputTokens:0 } };
 }
 
 function Matrix({ scoring, ideaName }) {
@@ -204,8 +193,8 @@ export default function TestMyIdea() {
   const [error, setError]   = useState(null);
   const [status, setStatus] = useState("");
   const [email, setEmail] = useState("");
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [emailError, setEmailError] = useState("");
-  const submissionId = useRef(null);
   const ref = useRef(null);
 
   useEffect(() => { if (phase === "intake") ref.current?.focus(); }, [phase, step]);
@@ -220,62 +209,22 @@ export default function TestMyIdea() {
 
   const keyDown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && answer.trim().length >= MIN_ANSWER_CHARS) next(); };
 
-  const updateSubmission = async (payload) => {
-    if (!submissionId.current) return;
-    try {
-      await fetch("/api/submissions", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: submissionId.current, ...payload }),
-      });
-    } catch (_) {
-      // Saving must not prevent someone seeing a completed validation.
-    }
-  };
-
-  const generate = async (a) => {
+  const generate = async (submittedEmail) => {
     setPhase("generating"); setError(null);
-    const ctx = STEPS.map(s => `${s.label}: ${a[s.id]}`).join("\n");
-    try {
-      setStatus("Analysing the idea...");
-      const overviewCall = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with keys: ideaName, tagline, problem, solution, differentiation. Short strings only.`);
-      setStatus("Mapping assumptions...");
-      const assumptionsCall = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"assumptions": array of 4 objects {label,assumption,risk("low"|"medium"|"high"),evidence}\n"validationSteps": array of 4 objects {label,description,effort,priority("high"|"medium")}`);
-      setStatus("Reaching verdict...");
-      const verdictCall = await callAPI(`You are a startup validator. Given:\n\n${ctx}\n\nReturn ONLY JSON with:\n"scoring": array of 6 objects {name,score(1-10),note} — names must be exactly: "Problem clarity","Market size","Differentiation","Technical feasibility","Monetisation fit","Speed to test"\n"verdict": "GO"|"TEST"|"KILL"\n"confidence": integer 1-100\n"rationale": 2 sentence string\n"nextSteps": array of 5 action strings`);
-      const completedModel = { ...overviewCall.result, ...assumptionsCall.result, ...verdictCall.result };
-      const calls = [overviewCall, assumptionsCall, verdictCall];
-      const usage = {
-        model: calls.find(call => call.usage.model)?.usage.model || "claude-sonnet-4-6",
-        inputTokens: calls.reduce((total, call) => total + Number(call.usage.inputTokens || 0), 0),
-        outputTokens: calls.reduce((total, call) => total + Number(call.usage.outputTokens || 0), 0),
-      };
-      await updateSubmission({ status: "completed", result: completedModel, usage });
-      setModel(completedModel);
-      setPhase("results"); setTab("overview");
-    } catch (err) {
-      await updateSubmission({ status: "failed", error: err.message });
-      setError(err.message);
-      setPhase("intake"); setStep(STEPS.length - 1);
-    }
-  };
-
-  const createSubmission = async (submittedEmail) => {
+    setStatus("Analysing your idea…");
     try {
       const response = await fetch("/api/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: submittedEmail,
-          answers,
-          pageUrl: window.location.href,
-          referrer: document.referrer,
-        }),
+        body: JSON.stringify({ email:submittedEmail, answers, marketingConsent, pageUrl:window.location.href, referrer:document.referrer }),
       });
-      const data = await response.json();
-      if (response.ok) submissionId.current = data.id || null;
-    } catch (_) {
-      // Capture/storage must not prevent someone seeing a validation result.
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not generate the report");
+      setModel(payload.result);
+      setPhase("results"); setTab("overview");
+    } catch (err) {
+      setError(err.message);
+      setPhase("emailGate");
     }
   };
 
@@ -285,11 +234,10 @@ export default function TestMyIdea() {
       return;
     }
     setEmailError("");
-    await createSubmission(email);
-    generate(answers);
+    generate(email);
   };
 
-  const reset = () => { submissionId.current = null; setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setEmailError(""); };
+  const reset = () => { setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setMarketingConsent(false); setEmailError(""); };
 
   const avg = model?.scoring ? Math.round(model.scoring.reduce((s,c) => s+c.score,0)/model.scoring.length) : 0;
 
@@ -408,7 +356,12 @@ export default function TestMyIdea() {
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && submitEmail()} placeholder="Your work email address" autoFocus
               style={{ width:"100%", boxSizing:"border-box", background:"#f8fafc", border:"1.5px solid #e2e8f0", borderRadius:10, color:"#1a1a2e", fontSize:15, padding:"14px 16px", outline:"none" }} />
             {emailError && <p style={{ color:"#b91c1c", fontSize:12, margin:"8px 0 0" }}>{emailError}</p>}
-            <p style={{ color:"#64748b", fontSize:11, lineHeight:1.5, margin:"9px 0 0" }}>We securely store your answers and generated report so we can provide and improve this service.</p>
+            {error && <p role="alert" style={{ color:"#b91c1c", fontSize:12, margin:"8px 0 0" }}>{error}</p>}
+            <label style={{ display:"flex", alignItems:"flex-start", gap:9, color:"#475569", fontSize:12, lineHeight:1.45, marginTop:14 }}>
+              <input type="checkbox" checked={marketingConsent} onChange={event => setMarketingConsent(event.target.checked)} style={{ marginTop:2 }} />
+              <span>Email me occasional Test My Idea updates. This is optional and does not affect my report.</span>
+            </label>
+            <p style={{ color:"#64748b", fontSize:11, lineHeight:1.5, margin:"9px 0 0" }}>We store your answers and generated report to provide the service. See our <Link href="/privacy" style={{ color:"#1a56db" }}>privacy notice</Link>.</p>
             <button onClick={submitEmail} style={{ width:"100%", border:0, borderRadius:50, background:"#1a56db", color:"#fff", cursor:"pointer", fontSize:15, fontWeight:600, marginTop:20, padding:"14px 28px" }}>Show my assessment →</button>
             <button onClick={() => { setPhase("intake"); setStep(STEPS.length - 1); setAnswer(answers[STEPS[STEPS.length - 1].id] || ""); }} style={{ width:"100%", background:"transparent", border:"1.5px solid #1a56db", borderRadius:50, color:"#1a56db", cursor:"pointer", fontSize:14, fontWeight:600, marginTop:10, padding:"12px 28px" }}>← Back to answers</button>
           </section>
@@ -764,7 +717,7 @@ function PrintReport({ model, avg }) {
         </div>
 
         <div style={{ marginTop:20, background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:10, padding:16 }}>
-          <div style={{ color:"#1a56db", fontSize:9, fontWeight:800, letterSpacing:"0.14em", marginBottom:8 }}>THIS WEEK'S FOUNDER CHECKLIST</div>
+          <div style={{ color:"#1a56db", fontSize:9, fontWeight:800, letterSpacing:"0.14em", marginBottom:8 }}>THIS WEEK&apos;S FOUNDER CHECKLIST</div>
           {(model.nextSteps || []).map((s,i) => <div key={i} style={{ display:"flex", gap:8, color:"#334155", fontSize:10, lineHeight:1.35, marginBottom:i === (model.nextSteps || []).length - 1 ? 0 : 7 }}><span style={{ color:"#1a56db", fontWeight:800 }}>{String(i+1).padStart(2,"0")}</span><span>{s}</span></div>)}
         </div>
         <div style={{ marginTop:16, borderTop:"1px solid #e2e8f0", paddingTop:12, color:"#64748b", fontSize:9, lineHeight:1.4 }}><strong style={{ color:"#334155" }}>Decision rule:</strong> Move forward only when the highest-risk assumption has evidence stronger than an opinion or vanity metric.</div>
