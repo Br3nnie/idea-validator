@@ -14,11 +14,14 @@ npm run migrate
 npm run dev
 ```
 
-Run `npm test`, `npm run lint`, `npm run build`, and `npm audit --omit=dev` before release.
+Run `npm test`, `npm run test:e2e`, `npm run lint`, `npm run build`, and `npm audit --omit=dev` before release. Install the Playwright browser once with `npx playwright install chromium`.
 
 ## Architecture
 
-- `POST /api/submissions` validates the request, enforces durable per-IP and per-email quotas, captures the contact, creates the database record, runs three server-side Anthropic passes, validates the model output, completes the record, and sends both Loops emails.
+- `POST /api/submissions` validates the request, verifies Turnstile when enabled, enforces durable quotas, and creates one record per browser-generated request key. It returns `202` while the three parallel Anthropic passes and email delivery continue in the function lifecycle.
+- `GET /api/submissions/[requestKey]` lets the browser reconnect to an in-progress report after refresh. Draft answers are retained in browser storage until completion.
+- Completed reports include an editable validation-experiment workspace and can create one active, revocable, 30-day private share link. Share responses exclude submitter details and are marked `noindex`.
+- The dashboard includes a privacy-preserving 30-day funnel based on hashed, anonymous session IDs.
 - `/api/validate` is retired. The browser cannot submit arbitrary prompts or mark records complete.
 - `/admin/submissions` uses a signed, HttpOnly admin session. Login throttling is stored in Postgres rather than function memory.
 - `/api/maintenance/retention` is called daily by Vercel Cron and removes expired submissions.
@@ -35,6 +38,10 @@ Optional configuration:
 - `ANTHROPIC_OUTPUT_USD_PER_MILLION` — defaults to `15`
 - `USD_TO_GBP_RATE` — defaults to `0.75`
 - `SUBMISSION_RETENTION_DAYS` — defaults to `365`, constrained to 30–3650
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` — enable Cloudflare Turnstile when both are configured
+- `DAILY_SPEND_ALERT_GBP` — daily generation-cost warning threshold; defaults to `5`
+- `SPEND_ALERT_WEBHOOK_URL` — optional JSON webhook that receives the daily threshold alert
+- `PUBLIC_SITE_URL` — base URL used for private report links; defaults to production
 
 ## Database migrations
 
@@ -51,7 +58,7 @@ Application requests verify that the required tables exist but do not run DDL.
 - Customer report: `cmto9lthf0k6o0jzbgwmje05n`
 - Owner notification: `cmto9smil0kd80jvselbch6x4`
 
-The customer payload uses separate variables for every section and list row. Its template must include `assumption1`–`assumption4`, `score1`–`score6`, `validation1`–`validation4`, and `next1`–`next5`. Do not replace these with one large report variable.
+The customer payload uses separate variables for every section and list row. Its template must include `assumption1`–`assumption4`, `score1`–`score6`, `validation1`–`validation4`, `next1`–`next5`, plus `evidenceLevel`, `evidenceRationale`, `evidenceGap`, and `verdictChange`. Do not replace these with one large report variable.
 
 ## Data handling
 
