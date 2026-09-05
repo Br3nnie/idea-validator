@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import Head from "next/head";
 
 const STEPS = [
   { id: "idea", label: "The Idea", question: "Describe your idea in plain language. What is it, who is it for, and what problem does it solve?" },
@@ -161,8 +162,8 @@ function RadarChart({ scoring, compact = false }) {
 
   return (
     <div style={{ width:"100%", maxWidth:compact ? 300 : 460, margin:"0 auto" }}>
-      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Six-dimension idea validation score radar chart" style={{ display:"block", width:"100%", height:"auto" }}>
-        <title>Idea validation score profile</title>
+      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Six-dimension Test My Idea score radar chart" style={{ display:"block", width:"100%", height:"auto" }}>
+        <title>Test My Idea score profile</title>
         <desc>Scores for problem clarity, market size, differentiation, technical feasibility, monetisation fit and speed to test.</desc>
         {gridLevels.map(level => (
           <polygon key={level} points={dimensions.map((_, index) => point(index, level).join(",")).join(" ")} fill={level === 1 ? "#f8fafc" : "none"} stroke="#cbd5e1" strokeWidth="1" />
@@ -192,7 +193,7 @@ function RadarChart({ scoring, compact = false }) {
   );
 }
 
-export default function IdeaValidator() {
+export default function TestMyIdea() {
   const [phase, setPhase]   = useState("intro");
   const [step, setStep]     = useState(0);
   const [answers, setAnswers] = useState({});
@@ -287,6 +288,10 @@ export default function IdeaValidator() {
 
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", color:"#334155", fontFamily:"'DM Sans',Arial,sans-serif" }}>
+      <Head>
+        <title>Test My Idea</title>
+        <meta name="description" content="Test your business idea before you build it. Get assumptions, scores, validation tests and a clear verdict." />
+      </Head>
       <style>{`
         @keyframes spin{to{transform:rotate(360deg)}}
         html, body { margin:0; }
@@ -310,10 +315,10 @@ export default function IdeaValidator() {
       {phase === "intro" && (
         <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 24px", textAlign:"center" }}>
           <div style={{ width:56, height:56, borderRadius:"50%", border:"1px solid #1a56db", color:"#1a56db", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:32, fontSize:22 }}>◈</div>
-          <h1 style={{ margin:"0 0 12px", fontSize:40, fontWeight:600, color:"#1a1a2e" }}>Idea Validator</h1>
+          <h1 style={{ margin:"0 0 12px", fontSize:40, fontWeight:600, color:"#1a1a2e" }}>Test My Idea</h1>
           <p style={{ margin:"0 0 8px", color:"#4a5568", fontSize:16, fontStyle:"italic" }}>Answer 6 questions. Get a full validation model.</p>
           <p style={{ margin:"0 0 48px", color:"#64748b", fontSize:13, maxWidth:380, lineHeight:1.7 }}>Assumptions mapped. Risks ranked. Go/Test/Kill verdict. Before you write a single line of code.</p>
-          <button onClick={() => setPhase("intake")} style={{ background:"#1a56db", color:"#fff", border:"none", borderRadius:8, padding:"14px 40px", fontSize:15, fontFamily:"inherit", cursor:"pointer" }}>Validate an idea →</button>
+          <button onClick={() => setPhase("intake")} style={{ background:"#1a56db", color:"#fff", border:"none", borderRadius:8, padding:"14px 40px", fontSize:15, fontFamily:"inherit", cursor:"pointer" }}>Test my idea →</button>
           <p style={{ margin:"24px 0 0", color:"#94a3b8", fontSize:11, fontFamily:"monospace" }}>Built on the 60-Minute Validation Framework</p>
         </div>
       )}
@@ -651,14 +656,14 @@ function PrintReport({ model, avg }) {
   const verdict = verdictCfg[model.verdict] || verdictCfg.TEST;
   const footer = (page) => (
     <div style={{ marginTop:"auto", paddingTop:10, borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", color:"#64748b", fontFamily:"Arial,sans-serif", fontSize:8 }}>
-      <span>IDEA VALIDATOR · FOUNDER DECISION BRIEF</span><span>{page} / 3</span>
+      <span>TEST MY IDEA · FOUNDER DECISION BRIEF</span><span>{page} / 3</span>
     </div>
   );
 
   return (
     <div className="print-all" style={{ display:"none", color:"#1a1a2e", fontFamily:"Arial,sans-serif", background:"#fff" }}>
       <section className="print-page" style={{ display:"flex", flexDirection:"column", background:"#fff" }}>
-        <div style={{ color:"#1a56db", fontSize:9, fontWeight:700, letterSpacing:"0.18em", marginBottom:14 }}>IDEA VALIDATOR · DECISION BRIEF</div>
+        <div style={{ color:"#1a56db", fontSize:9, fontWeight:700, letterSpacing:"0.18em", marginBottom:14 }}>TEST MY IDEA · DECISION BRIEF</div>
         <div style={{ display:"flex", justifyContent:"space-between", gap:24, alignItems:"flex-start", borderBottom:"1px solid #e2e8f0", paddingBottom:20 }}>
           <div style={{ maxWidth:"68%" }}>
             <h1 style={{ margin:0, color:"#1a1a2e", fontSize:34, lineHeight:1.05, letterSpacing:"-0.04em" }}>{model.ideaName}</h1>

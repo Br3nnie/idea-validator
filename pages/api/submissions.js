@@ -28,7 +28,7 @@ async function captureInLoops(email, answers) {
       },
       body: JSON.stringify({
         email,
-        source: "idea-validator",
+        source: "test-my-idea",
         ideaSummary,
         ...(process.env.LOOPS_MAILING_LIST_ID?.trim()
           ? { mailingLists: { [process.env.LOOPS_MAILING_LIST_ID.trim()]: true } }

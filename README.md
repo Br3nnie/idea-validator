@@ -1,6 +1,6 @@
-# Idea Validator
+# Test My Idea
 
-AI-powered startup idea validation. Answer 6 questions, get a full validation model with assumptions, scoring, and Go/Test/Kill verdict.
+AI-powered startup idea testing. Answer 6 questions, get a full decision model with assumptions, scoring, and a Go/Test/Kill verdict.
 
 ## Deploy to Vercel
 
@@ -39,7 +39,7 @@ The email gate appears after the sixth question and before the AI model is gener
 - `LOOPS_API_KEY`
 - `LOOPS_MAILING_LIST_ID` (optional)
 
-Captured contacts receive the source `idea-validator` and an abbreviated idea summary. The validation still works if Loops is not configured.
+Captured contacts receive the source `test-my-idea` and an abbreviated idea summary. The assessment still works if Loops is not configured.
 
 ## Submission storage
 
@@ -50,4 +50,4 @@ Connect a Neon Postgres resource to the Vercel project and provide `DATABASE_URL
 - verdict, confidence, and average score for filtering;
 - Loops capture status, page/referrer metadata, and generation failures.
 
-Storage is server-only. If no database is configured or it is temporarily unavailable, Loops capture and idea validation continue to work, and the failure is written to the Vercel function logs.
+Storage is server-only. If no database is configured or it is temporarily unavailable, Loops capture and idea testing continue to work, and the failure is written to the Vercel function logs.

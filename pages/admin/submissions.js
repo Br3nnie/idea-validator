@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Head from "next/head";
 
 const colours = {
   processing: { bg: "#eff6ff", fg: "#1d4ed8" },
@@ -81,13 +82,14 @@ export default function SubmissionsDashboard() {
     const headings = ["created_at","status","email","idea_name","verdict","average_score","confidence","loops_captured","answers","result","error_message"];
     const lines = [headings.map(csvCell).join(","), ...data.submissions.map(item => headings.map(key => csvCell(typeof item[key] === "object" ? JSON.stringify(item[key]) : item[key])).join(","))];
     const url = URL.createObjectURL(new Blob([lines.join("\n")], { type:"text/csv;charset=utf-8" }));
-    const link = document.createElement("a"); link.href = url; link.download = `idea-validator-submissions-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(url);
+    const link = document.createElement("a"); link.href = url; link.download = `test-my-idea-submissions-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(url);
   };
 
   const cards = useMemo(() => [["Total",data.summary.total],["Processing",data.summary.processing],["Completed",data.summary.completed],["Failed",data.summary.failed]], [data.summary]);
 
   if (auth !== "authenticated") return (
     <main style={{ minHeight:"100vh", display:"grid", placeItems:"center", background:"#f0f4f8", color:"#1a1a2e", fontFamily:"Arial,sans-serif", padding:24 }}>
+      <Head><title>Submissions · Test My Idea</title></Head>
       <form onSubmit={login} style={{ width:"min(400px,100%)", background:"white", border:"1px solid #e2e8f0", borderRadius:16, padding:32, boxSizing:"border-box", boxShadow:"0 18px 50px #1a56db18" }}>
         <div style={{ color:"#1a56db", fontSize:11, fontWeight:800, letterSpacing:".14em" }}>PRIVATE ADMIN</div>
         <h1 style={{ margin:"10px 0 8px", fontSize:28 }}>Submission dashboard</h1>
@@ -100,9 +102,10 @@ export default function SubmissionsDashboard() {
 
   return (
     <main style={{ minHeight:"100vh", background:"#f0f4f8", color:"#1e293b", fontFamily:"Arial,sans-serif", padding:"28px clamp(16px,4vw,52px) 60px" }}>
+      <Head><title>Submissions · Test My Idea</title></Head>
       <div style={{ maxWidth:1500, margin:"0 auto" }}>
         <header style={{ display:"flex", justifyContent:"space-between", gap:20, alignItems:"center", flexWrap:"wrap", marginBottom:26 }}>
-          <div><div style={{ color:"#1a56db", fontSize:11, fontWeight:800, letterSpacing:".14em" }}>IDEA VALIDATOR</div><h1 style={{ margin:"7px 0 4px", fontSize:"clamp(26px,4vw,38px)" }}>Submission dashboard</h1><div style={{ color:"#64748b", fontSize:12 }}>Updates every 10 seconds{lastUpdated ? ` · Last updated ${lastUpdated.toLocaleTimeString("en-GB")}` : ""}</div></div>
+          <div><div style={{ color:"#1a56db", fontSize:11, fontWeight:800, letterSpacing:".14em" }}>TEST MY IDEA</div><h1 style={{ margin:"7px 0 4px", fontSize:"clamp(26px,4vw,38px)" }}>Submission dashboard</h1><div style={{ color:"#64748b", fontSize:12 }}>Updates every 10 seconds{lastUpdated ? ` · Last updated ${lastUpdated.toLocaleTimeString("en-GB")}` : ""}</div></div>
           <div style={{ display:"flex", gap:9 }}><button onClick={() => load()} style={buttonStyle}>Refresh</button><button onClick={exportCsv} style={buttonStyle}>Export CSV</button><button onClick={logout} style={buttonStyle}>Sign out</button></div>
         </header>
 
