@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import Script from "next/script";
 
 const STEPS = [
   { id: "idea", label: "The Idea", question: "Describe your idea in plain language. What is it, who is it for, and what problem does it solve?" },
@@ -12,6 +13,30 @@ const STEPS = [
 ];
 
 const MIN_ANSWER_CHARS = 40;
+const DRAFT_KEY = "test-my-idea-draft-v1";
+const PENDING_KEY = "test-my-idea-pending-v1";
+const ANALYTICS_KEY = "test-my-idea-analytics-v1";
+
+function followUpQuestion(answers) {
+  const evidence = String(answers.evidence || "").toLowerCase();
+  if (/hunch|guess|assum|no evidence|not sure|unsure/.test(evidence)) return "What observable customer behaviour would prove this problem is painful enough to act on?";
+  const monetisation = String(answers.monetisation || "").toLowerCase();
+  if (/not sure|unsure|maybe|free|unknown/.test(monetisation)) return "What is the smallest financial or time commitment a real customer could make to validate willingness to pay?";
+  return "What measurable result would prove your riskiest assumption wrong and make you stop or substantially change direction?";
+}
+
+async function waitForReport(key, onStatus) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const response = await fetch(`/api/submissions/${encodeURIComponent(key)}`, { cache:"no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not check report status");
+    if (payload.status === "completed") return payload.result;
+    if (payload.status === "failed") throw new Error(payload.error || "The report could not be generated");
+    onStatus?.(attempt < 5 ? "Analysing your idea…" : attempt < 12 ? "Mapping assumptions and evidence…" : "Finalising your report…");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  throw new Error("The report is still processing. Refresh this page in a moment to reconnect.");
+}
 
 const riskColor = { low: "#16a34a", medium: "#b45309", high: "#dc2626" };
 const riskBg   = { low: "#f0fdf4", medium: "#fff7ed", high: "#fef2f2" };
@@ -195,9 +220,63 @@ export default function TestMyIdea() {
   const [email, setEmail] = useState("");
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [emailError, setEmailError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const [activeRequestKey, setActiveRequestKey] = useState("");
+  const requestKey = useRef(null);
+  const analyticsSession = useRef(null);
   const ref = useRef(null);
 
   useEffect(() => { if (phase === "intake") ref.current?.focus(); }, [phase, step]);
+  /* eslint-disable react-hooks/set-state-in-effect -- hydrate recoverable client-only state after mount */
+  useEffect(() => {
+    analyticsSession.current = localStorage.getItem(ANALYTICS_KEY) || crypto.randomUUID();
+    localStorage.setItem(ANALYTICS_KEY, analyticsSession.current);
+  }, []);
+  useEffect(() => {
+    const event = phase === "intake" ? `question_${step + 1}` : ({ review:"reviewed", emailGate:"email_gate", generating:"submitted", results:"completed" })[phase];
+    if (!event || !analyticsSession.current) return;
+    fetch("/api/analytics", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ sessionId:analyticsSession.current, event }), keepalive:true }).catch(() => {});
+  }, [phase, step]);
+  useEffect(() => {
+    window.onTestMyIdeaTurnstile = token => setTurnstileToken(token);
+    window.onTestMyIdeaTurnstileExpired = () => setTurnstileToken("");
+    return () => { delete window.onTestMyIdeaTurnstile; delete window.onTestMyIdeaTurnstileExpired; };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "null");
+      if (!pending?.requestKey || !pending?.answers) {
+        const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+        if (draft?.answers && Object.keys(draft.answers).length) {
+          setAnswers(draft.answers); setEmail(draft.email || ""); setStep(draft.step || 0);
+          setAnswer(draft.phase === "review" ? "" : draft.answers[STEPS[draft.step || 0]?.id] || "");
+          setPhase(draft.phase === "review" ? "review" : "intake");
+        }
+        return;
+      }
+      requestKey.current = pending.requestKey;
+      setActiveRequestKey(pending.requestKey);
+      setAnswers(pending.answers);
+      setEmail(pending.email || "");
+      setPhase("generating");
+      waitForReport(pending.requestKey, setStatus).then(result => {
+        setModel(result); setPhase("results"); setTab("overview"); localStorage.removeItem(PENDING_KEY); localStorage.removeItem(DRAFT_KEY);
+      }).catch(recoveryError => {
+        requestKey.current = null; setActiveRequestKey(""); localStorage.removeItem(PENDING_KEY);
+        setError(recoveryError.message); setPhase("emailGate");
+      });
+    } catch (_) {
+      localStorage.removeItem(PENDING_KEY);
+    }
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!Object.keys(answers).length || ["results", "generating"].includes(phase)) return;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ answers, step, email, phase }));
+  }, [answers, step, email, phase]);
 
   const next = () => {
     const updated = { ...answers, [STEPS[step].id]: answer.trim() };
@@ -213,17 +292,26 @@ export default function TestMyIdea() {
     setPhase("generating"); setError(null);
     setStatus("Analysing your idea…");
     try {
+      if (!requestKey.current) requestKey.current = crypto.randomUUID();
+      setActiveRequestKey(requestKey.current);
+      localStorage.setItem(PENDING_KEY, JSON.stringify({ requestKey:requestKey.current, answers, email:submittedEmail }));
       const response = await fetch("/api/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email:submittedEmail, answers, marketingConsent, pageUrl:window.location.href, referrer:document.referrer }),
+        body: JSON.stringify({ requestKey:requestKey.current, email:submittedEmail, answers, marketingConsent, turnstileToken, pageUrl:window.location.href, referrer:document.referrer }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not generate the report");
-      setModel(payload.result);
+      const result = payload.result || await waitForReport(requestKey.current, setStatus);
+      setModel(result);
+      localStorage.removeItem(PENDING_KEY); localStorage.removeItem(DRAFT_KEY);
       setPhase("results"); setTab("overview");
     } catch (err) {
+      requestKey.current = null;
+      setActiveRequestKey("");
+      localStorage.removeItem(PENDING_KEY);
       setError(err.message);
+      if (analyticsSession.current) fetch("/api/analytics", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ sessionId:analyticsSession.current, event:"failed" }), keepalive:true }).catch(() => {});
       setPhase("emailGate");
     }
   };
@@ -237,12 +325,22 @@ export default function TestMyIdea() {
     generate(email);
   };
 
-  const reset = () => { setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setMarketingConsent(false); setEmailError(""); };
+  const createShare = async () => {
+    if (!requestKey.current) return;
+    const response = await fetch(`/api/reports/${requestKey.current}/share`, { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ expiryDays:30 }) });
+    const payload = await response.json();
+    if (!response.ok) return setError(payload.error || "Could not create share link");
+    setShareUrl(payload.url);
+    await navigator.clipboard?.writeText(payload.url).catch(() => {});
+  };
+
+  const reset = () => { requestKey.current = null; setActiveRequestKey(""); localStorage.removeItem(PENDING_KEY); localStorage.removeItem(DRAFT_KEY); setPhase("intro"); setStep(0); setAnswers({}); setAnswer(""); setModel(null); setError(null); setStatus(""); setEmail(""); setMarketingConsent(false); setEmailError(""); };
 
   const avg = model?.scoring ? Math.round(model.scoring.reduce((s,c) => s+c.score,0)/model.scoring.length) : 0;
 
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", color:"#334155", fontFamily:"'DM Sans',Arial,sans-serif" }}>
+      {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />}
       <Head>
         <title>Test My Idea</title>
         <meta name="description" content="Test your business idea before you build it. Get assumptions, scores, validation tests and a clear verdict." />
@@ -272,9 +370,9 @@ export default function TestMyIdea() {
           <div style={{ width:56, height:56, borderRadius:"50%", border:"1px solid #1a56db", color:"#1a56db", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:32, fontSize:22 }}>◈</div>
           <h1 style={{ margin:"0 0 12px", fontSize:40, fontWeight:600, color:"#1a1a2e" }}>Test My Idea</h1>
           <p style={{ margin:"0 0 8px", color:"#4a5568", fontSize:16, fontStyle:"italic" }}>Answer 6 questions. Get a full validation model.</p>
-          <p style={{ margin:"0 0 48px", color:"#64748b", fontSize:13, maxWidth:380, lineHeight:1.7 }}>Assumptions mapped. Risks ranked. Go/Test/Kill verdict. Before you write a single line of code.</p>
-          <button onClick={() => setPhase("intake")} style={{ background:"#1a56db", color:"#fff", border:"none", borderRadius:8, padding:"14px 40px", fontSize:15, fontFamily:"inherit", cursor:"pointer" }}>Test my idea →</button>
-          <p style={{ margin:"24px 0 0", color:"#94a3b8", fontSize:11, fontFamily:"monospace" }}>Built on the 60-Minute Validation Framework</p>
+          <p style={{ margin:"0 0 48px", color:"#475569", fontSize:13, maxWidth:380, lineHeight:1.7 }}>Assumptions mapped. Risks ranked. Go/Test/Kill verdict. Before you write a single line of code.</p>
+          <button onClick={() => { if (analyticsSession.current) fetch("/api/analytics", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ sessionId:analyticsSession.current, event:"started" }), keepalive:true }).catch(() => {}); setPhase("intake"); }} style={{ background:"#1a56db", color:"#fff", border:"none", borderRadius:8, padding:"14px 40px", fontSize:15, fontFamily:"inherit", cursor:"pointer" }}>Test my idea →</button>
+          <p style={{ margin:"24px 0 0", color:"#475569", fontSize:11, fontFamily:"monospace" }}>Built on the 60-Minute Validation Framework</p>
         </div>
       )}
 
@@ -338,9 +436,14 @@ export default function TestMyIdea() {
                 </div>
               ))}
             </div>
+            <div style={{ marginTop:24, padding:20, background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:12 }}>
+              <label htmlFor="adaptive-follow-up" style={{ display:"block", color:"#1a56db", fontSize:11, fontFamily:"monospace", fontWeight:800, letterSpacing:".1em", marginBottom:8 }}>ONE TARGETED FOLLOW-UP</label>
+              <div style={{ color:"#1a1a2e", fontSize:18, fontWeight:700, lineHeight:1.35, marginBottom:12 }}>{followUpQuestion(answers)}</div>
+              <textarea id="adaptive-follow-up" value={answers.followup || ""} onChange={event => setAnswers({ ...answers, followup:event.target.value })} rows={3} placeholder="Be specific about the behaviour, commitment or stopping rule…" style={{ width:"100%", boxSizing:"border-box", border:"1px solid #bfdbfe", borderRadius:8, padding:12, font: "inherit", resize:"vertical" }} />
+            </div>
             <div style={{ display:"flex", justifyContent:"space-between", gap:16, marginTop:30, alignItems:"center" }}>
               <button onClick={() => { setStep(STEPS.length - 1); setAnswer(answers[STEPS[STEPS.length - 1].id] || ""); setPhase("intake"); }} style={{ background:"#fff", color:"#1a56db", border:"1px solid #cbd5e1", borderRadius:9, padding:"13px 22px", cursor:"pointer", fontSize:14, fontWeight:700 }}>← Back</button>
-              <button onClick={() => setPhase("emailGate")} style={{ background:"#1a56db", color:"#fff", border:0, borderRadius:9, padding:"15px 28px", cursor:"pointer", fontSize:15, fontWeight:700 }}>Generate validation model →</button>
+              <button disabled={(answers.followup || "").trim().length < MIN_ANSWER_CHARS} onClick={() => setPhase("emailGate")} style={{ background:(answers.followup || "").trim().length >= MIN_ANSWER_CHARS ? "#1a56db" : "#cbd5e1", color:"#fff", border:0, borderRadius:9, padding:"15px 28px", cursor:(answers.followup || "").trim().length >= MIN_ANSWER_CHARS ? "pointer" : "default", fontSize:15, fontWeight:700 }}>Generate validation model →</button>
             </div>
           </section>
         </div>
@@ -362,7 +465,8 @@ export default function TestMyIdea() {
               <span>Email me occasional Test My Idea updates. This is optional and does not affect my report.</span>
             </label>
             <p style={{ color:"#64748b", fontSize:11, lineHeight:1.5, margin:"9px 0 0" }}>We store your answers and generated report to provide the service. See our <Link href="/privacy" style={{ color:"#1a56db" }}>privacy notice</Link>.</p>
-            <button onClick={submitEmail} style={{ width:"100%", border:0, borderRadius:50, background:"#1a56db", color:"#fff", cursor:"pointer", fontSize:15, fontWeight:600, marginTop:20, padding:"14px 28px" }}>Show my assessment →</button>
+            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} data-callback="onTestMyIdeaTurnstile" data-expired-callback="onTestMyIdeaTurnstileExpired" style={{ marginTop:14 }} />}
+            <button disabled={Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)} onClick={submitEmail} style={{ width:"100%", border:0, borderRadius:50, background:"#1a56db", color:"#fff", cursor:"pointer", fontSize:15, fontWeight:600, marginTop:20, padding:"14px 28px", opacity:process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken ? .55 : 1 }}>Show my assessment →</button>
             <button onClick={() => { setPhase("intake"); setStep(STEPS.length - 1); setAnswer(answers[STEPS[STEPS.length - 1].id] || ""); }} style={{ width:"100%", background:"transparent", border:"1.5px solid #1a56db", borderRadius:50, color:"#1a56db", cursor:"pointer", fontSize:14, fontWeight:600, marginTop:10, padding:"12px 28px" }}>← Back to answers</button>
           </section>
         </div>
@@ -411,7 +515,7 @@ export default function TestMyIdea() {
           {/* Tabs */}
           {tab !== "overview" && <div className="no-print" style={{ borderBottom:"1px solid #e2e8f0", padding:"0 32px", background:"#fff" }}>
             <div style={{ maxWidth:900, margin:"0 auto", display:"flex" }}>
-              {["overview","matrix","assumptions","steps","scoring","verdict"].map(t => (
+              {["overview","matrix","assumptions","steps","scoring","verdict","experiments"].map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ background:"none", border:"none", borderBottom:tab===t?"2px solid #1a56db":"2px solid transparent", color:tab===t?"#1a56db":"#64748b", padding:"12px 14px", cursor:"pointer", fontSize:12, fontFamily:"monospace", letterSpacing:"0.08em", textTransform:"uppercase" }}>{t}</button>
               ))}
             </div>
@@ -421,7 +525,7 @@ export default function TestMyIdea() {
           <div className="no-print" style={{ maxWidth:tab === "overview" ? "none" : 900, margin:"0 auto", padding:tab === "overview" ? 0 : 32 }}>
 
             {tab === "overview" && (
-              <V2Overview model={model} avg={avg} answers={answers} onDetails={() => setTab("assumptions")} onReset={reset} />
+              <V2Overview model={model} avg={avg} answers={answers} onDetails={() => setTab("assumptions")} onExperiments={() => setTab("experiments")} onReset={reset} onShare={createShare} shareUrl={shareUrl} />
             )}
 
             {tab === "matrix" && model.scoring && (
@@ -510,6 +614,8 @@ export default function TestMyIdea() {
               </div>
             )}
 
+            {tab === "experiments" && activeRequestKey && <ExperimentWorkspace requestKey={activeRequestKey} />}
+
             <div style={{ marginTop:40, textAlign:"center" }}>
               <button onClick={reset} style={{ background:"#fff", border:"1px solid #cbd5e1", borderRadius:8, color:"#1a56db", padding:"10px 24px", cursor:"pointer", fontSize:12, fontFamily:"monospace" }}>← Validate another idea</button>
             </div>
@@ -540,7 +646,36 @@ function Section({ title, children }) {
   );
 }
 
-function V2Overview({ model, avg, answers, onDetails, onReset }) {
+function ExperimentWorkspace({ requestKey }) {
+  const [experiments, setExperiments] = useState([]);
+  const [message, setMessage] = useState("Loading experiments…");
+  const fieldStyle = { width:"100%", boxSizing:"border-box", border:"1px solid #cbd5e1", borderRadius:8, padding:"10px 11px", background:"white", color:"#1e293b", fontSize:13 };
+  useEffect(() => {
+    fetch(`/api/submissions/${requestKey}/experiments`, { cache:"no-store" }).then(response => response.json()).then(payload => {
+      setExperiments(payload.experiments || []); setMessage(payload.experiments?.length ? "" : "No experiments are available yet.");
+    }).catch(() => setMessage("Could not load experiments."));
+  }, [requestKey]);
+  const update = (id, key, value) => setExperiments(items => items.map(item => item.id === id ? { ...item, [key]:value } : item));
+  const save = async item => {
+    setMessage("Saving…");
+    const response = await fetch(`/api/submissions/${requestKey}/experiments`, { method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({
+      id:item.id, hypothesis:item.hypothesis, method:item.method, targetAudience:item.target_audience, successThreshold:item.success_threshold,
+      deadline:item.deadline?.slice?.(0,10) || "", result:item.result, decision:item.decision, status:item.status,
+    }) });
+    setMessage(response.ok ? "Saved." : "Could not save this experiment.");
+  };
+  return <div><h2 style={{ color:"#1a1a2e" }}>Validation experiments</h2><p style={{ color:"#64748b" }}>Turn recommendations into measurable decisions. Record the threshold before running each test.</p>
+    {message && <p role="status" style={{ color:"#1a56db", fontSize:12 }}>{message}</p>}
+    <div style={{ display:"grid", gap:16 }}>{experiments.map((item, index) => <div key={item.id} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:12, padding:20 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", gap:12 }}><strong>Experiment {index + 1}</strong><select value={item.status} onChange={event => update(item.id,"status",event.target.value)} style={fieldStyle}><option value="planned">Planned</option><option value="running">Running</option><option value="completed">Completed</option></select></div>
+      {[["Hypothesis","hypothesis"],["Method","method"],["Target audience","target_audience"],["Success threshold","success_threshold"],["Result","result"],["Decision taken","decision"]].map(([label,key]) => <label key={key} style={{ display:"block", marginTop:12, color:"#475569", fontSize:12 }}>{label}<textarea value={item[key] || ""} onChange={event => update(item.id,key,event.target.value)} rows={key === "method" ? 3 : 2} style={{ ...fieldStyle, display:"block", marginTop:5, resize:"vertical" }} /></label>)}
+      <label style={{ display:"block", marginTop:12, color:"#475569", fontSize:12 }}>Deadline<input type="date" value={item.deadline?.slice?.(0,10) || ""} onChange={event => update(item.id,"deadline",event.target.value)} style={{ ...fieldStyle, display:"block", marginTop:5 }} /></label>
+      <button onClick={() => save(item)} style={{ background:"#1a56db", color:"white", border:0, borderRadius:8, padding:"10px 16px", marginTop:14, cursor:"pointer", fontWeight:700 }}>Save experiment</button>
+    </div>)}</div>
+  </div>;
+}
+
+function V2Overview({ model, avg, answers, onDetails, onExperiments, onReset, onShare, shareUrl }) {
   const strongest = [...(model.scoring || [])].sort((a,b) => b.score - a.score)[0];
   const riskiest = [...(model.assumptions || [])].sort((a,b) => ({high:0,medium:1,low:2}[a.risk] - {high:0,medium:1,low:2}[b.risk]))[0];
   const firstTest = model.validationSteps?.[0];
@@ -561,6 +696,11 @@ function V2Overview({ model, avg, answers, onDetails, onReset }) {
           </div>
         </div>
         <p style={{ margin:"28px 0 34px", maxWidth:960, color:"#475569", fontSize:"clamp(17px,2vw,23px)", lineHeight:1.45 }}>{model.rationale}</p>
+
+        {model.evidenceStrength && <div style={{ margin:"0 0 28px", display:"grid", gridTemplateColumns:"180px 1fr", gap:20, padding:"20px 24px", background:"#fff", border:"1px solid #e2e8f0", borderRadius:12 }}>
+          <div><div style={{ color:"#64748b", fontSize:10, fontFamily:"monospace", fontWeight:800, letterSpacing:".1em" }}>EVIDENCE STRENGTH</div><div style={{ color:"#1a56db", fontSize:28, fontWeight:800, textTransform:"capitalize", marginTop:7 }}>{model.evidenceStrength.level}</div><div style={{ color:"#64748b", fontSize:12 }}>{model.evidenceStrength.score}/5</div></div>
+          <div style={{ color:"#475569", fontSize:14, lineHeight:1.55 }}><div>{model.evidenceStrength.rationale}</div><div style={{ marginTop:8 }}><strong style={{ color:"#1a1a2e" }}>Biggest gap:</strong> {model.evidenceStrength.biggestGap}</div><div style={{ marginTop:8 }}><strong style={{ color:"#1a1a2e" }}>What would change the verdict:</strong> {model.evidenceStrength.wouldChangeVerdict}</div></div>
+        </div>}
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,minmax(0,1fr))", border:"1px solid #e2e8f0", borderRadius:12, overflow:"hidden", background:"#fff" }}>
           <div style={{ padding:"24px 28px", borderRight:"1px solid #e2e8f0" }}>
@@ -600,6 +740,8 @@ function V2Overview({ model, avg, answers, onDetails, onReset }) {
 
         <div style={{ display:"flex", justifyContent:"flex-end", gap:12, marginTop:30, flexWrap:"wrap" }}>
           <button onClick={onReset} style={{ background:"#fff", border:"1px solid #cbd5e1", borderRadius:9, color:"#1a56db", padding:"13px 20px", cursor:"pointer", fontSize:14, fontWeight:700 }}>← Edit answers</button>
+          <button onClick={onExperiments} style={{ background:"#fff", border:"1px solid #cbd5e1", borderRadius:9, color:"#1a56db", padding:"13px 20px", cursor:"pointer", fontSize:14, fontWeight:700 }}>Run experiments</button>
+          <button onClick={onShare} style={{ background:"#fff", border:"1px solid #cbd5e1", borderRadius:9, color:"#1a56db", padding:"13px 20px", cursor:"pointer", fontSize:14, fontWeight:700 }}>{shareUrl ? "Share link copied" : "Create private share link"}</button>
           <button onClick={onDetails} style={{ background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:9, color:"#1a56db", padding:"13px 20px", cursor:"pointer", fontSize:14, fontWeight:700 }}>View full analysis →</button>
           <button onClick={() => window.print()} style={{ background:"#1a56db", border:0, borderRadius:9, color:"#fff", padding:"13px 20px", cursor:"pointer", fontSize:14, fontWeight:700 }}>Export PDF</button>
         </div>

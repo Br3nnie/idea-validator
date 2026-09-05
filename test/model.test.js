@@ -10,6 +10,7 @@ test("accepts a complete validation model", () => {
   }).validationSteps.length, 4);
   const verdict = parseVerdict({
     scoring:MODEL_DIMENSIONS.map(name => ({ name, score:7, note:"Good" })), verdict:"GO", confidence:80, rationale:"Evidence supports a test.",
+    evidenceStrength:{ level:"moderate", score:3, rationale:"Some evidence", biggestGap:"Payment", wouldChangeVerdict:"A paid pilot" },
     nextSteps:Array.from({ length:5 }, (_, i) => `Step ${i + 1}`),
   });
   assert.equal(verdict.scoring.length, 6);

@@ -104,6 +104,7 @@ export default function SubmissionsDashboard() {
     ["Cumulative cost", money(data.summary.costGbp, "GBP")],
     ["Cumulative cost (USD)", money(data.summary.costUsd, "USD")],
   ], [data.summary]);
+  const funnel = data.analytics || {};
 
   if (auth !== "authenticated") return (
     <main style={{ minHeight:"100vh", display:"grid", placeItems:"center", background:"#f0f4f8", color:"#1a1a2e", fontFamily:"Arial,sans-serif", padding:24 }}>
@@ -137,6 +138,13 @@ export default function SubmissionsDashboard() {
             {usageCards.map(([label,value]) => <div key={label} style={{ background:"#172554", color:"white", borderRadius:12, padding:"16px 18px" }}><div style={{ color:"#bfdbfe", fontSize:10, fontWeight:800, textTransform:"uppercase", letterSpacing:".07em" }}>{label}</div><div style={{ marginTop:7, fontSize:23, fontWeight:800 }}>{value}</div></div>)}
           </div>
           <p style={{ color:"#64748b", fontSize:10, margin:"7px 2px 0" }}>Estimated using Claude Sonnet 4.6 standard pricing ($3 input / $15 output per million tokens) and the stored USD→GBP rate.</p>
+        </section>
+
+        <section style={{ marginBottom:18 }}>
+          <div style={{ color:"#64748b", fontSize:10, fontWeight:800, letterSpacing:".1em", textTransform:"uppercase", margin:"0 0 8px 2px" }}>30-day funnel</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10 }}>
+            {[['Started',funnel.started],['Reached review',funnel.reviewed],['Email gate',funnel.email_gate],['Submitted',funnel.submitted],['Completed',funnel.completed],['Failed',funnel.failed]].map(([label,value]) => <div key={label} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:10, padding:"13px 15px" }}><div style={{ color:"#64748b", fontSize:10, fontWeight:800, textTransform:"uppercase" }}>{label}</div><div style={{ fontSize:23, fontWeight:800, marginTop:5 }}>{value || 0}</div></div>)}
+          </div>
         </section>
 
         <section style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:12, padding:14, marginBottom:14, display:"grid", gridTemplateColumns:"minmax(220px,1fr) 180px 160px", gap:10 }}>

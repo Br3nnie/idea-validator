@@ -14,6 +14,7 @@ test("customer email includes every structured report row", async t => {
   t.after(() => { global.fetch = originalFetch; });
   const result = {
     ideaName:"Idea", tagline:"Tag", verdict:"TEST", confidence:70, rationale:"Why", problem:"Problem", solution:"Solution", differentiation:"Different",
+    evidenceStrength:{ level:"moderate", rationale:"Some", biggestGap:"Payment", wouldChangeVerdict:"Paid pilot" },
     assumptions:Array.from({ length:4 }, (_, i) => ({ assumption:`Assumption ${i + 1}`, risk:"high", evidence:"None" })),
     scoring:Array.from({ length:6 }, (_, i) => ({ name:`Score ${i + 1}`, score:5, note:"Note" })),
     validationSteps:Array.from({ length:4 }, (_, i) => ({ label:`Test ${i + 1}`, description:"Description", effort:"One day" })),
