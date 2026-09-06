@@ -223,11 +223,14 @@ export default function TestMyIdea() {
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReady, setTurnstileReady] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
   const [activeRequestKey, setActiveRequestKey] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const requestKey = useRef(null);
   const analyticsSession = useRef(null);
+  const turnstileHost = useRef(null);
+  const turnstileWidget = useRef(null);
   const ref = useRef(null);
 
   useEffect(() => { if (phase === "intake") ref.current?.focus(); }, [phase, step]);
@@ -243,10 +246,20 @@ export default function TestMyIdea() {
     fetch("/api/analytics", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ sessionId:analyticsSession.current, event, properties }), keepalive:true }).catch(() => {});
   }, [phase, step]);
   useEffect(() => {
-    window.onTestMyIdeaTurnstile = token => setTurnstileToken(token);
-    window.onTestMyIdeaTurnstileExpired = () => setTurnstileToken("");
-    return () => { delete window.onTestMyIdeaTurnstile; delete window.onTestMyIdeaTurnstileExpired; };
-  }, []);
+    if (phase !== "emailGate" || !turnstileReady || !turnstileHost.current || !window.turnstile) return;
+    turnstileWidget.current = window.turnstile.render(turnstileHost.current, {
+      sitekey:process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+      callback:token => setTurnstileToken(token),
+      "expired-callback":() => setTurnstileToken(""),
+      "error-callback":() => setTurnstileToken(""),
+    });
+    const host = turnstileHost.current;
+    return () => {
+      if (turnstileWidget.current !== null && window.turnstile) window.turnstile.remove(turnstileWidget.current);
+      turnstileWidget.current = null;
+      if (host) host.replaceChildren();
+    };
+  }, [phase, turnstileReady]);
 
   useEffect(() => {
     const linkedAccess = new URLSearchParams(window.location.search).get("access");
@@ -355,7 +368,7 @@ export default function TestMyIdea() {
 
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", color:"#334155", fontFamily:"'DM Sans',Arial,sans-serif" }}>
-      {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />}
+      {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" onReady={() => setTurnstileReady(true)} />}
       <Head>
         <title>Test My Idea</title>
         <meta name="description" content="Test your business idea before you build it. Get assumptions, scores, validation tests and a clear verdict." />
@@ -473,7 +486,7 @@ export default function TestMyIdea() {
               <span>Email me occasional Test My Idea updates. This is optional and does not affect my report.</span>
             </label>
             <p style={{ color:"#64748b", fontSize:11, lineHeight:1.5, margin:"9px 0 0" }}>We store your answers and generated report to provide the service. See our <Link href="/privacy" style={{ color:"#1a56db" }}>privacy notice</Link>.</p>
-            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && <div className="cf-turnstile" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} data-callback="onTestMyIdeaTurnstile" data-expired-callback="onTestMyIdeaTurnstileExpired" style={{ marginTop:14 }} />}
+            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && <div ref={turnstileHost} style={{ marginTop:14 }} />}
             <button disabled={Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)} onClick={submitEmail} style={{ width:"100%", border:0, borderRadius:50, background:"#1a56db", color:"#fff", cursor:"pointer", fontSize:15, fontWeight:600, marginTop:20, padding:"14px 28px", opacity:process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken ? .55 : 1 }}>Show my assessment →</button>
             <button onClick={() => { setPhase("intake"); setStep(STEPS.length - 1); setAnswer(answers[STEPS[STEPS.length - 1].id] || ""); }} style={{ width:"100%", background:"transparent", border:"1.5px solid #1a56db", borderRadius:50, color:"#1a56db", cursor:"pointer", fontSize:14, fontWeight:600, marginTop:10, padding:"12px 28px" }}>← Back to answers</button>
           </section>

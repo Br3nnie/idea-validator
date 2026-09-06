@@ -3,6 +3,10 @@ import AxeBuilder from "@axe-core/playwright";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/analytics", route => route.fulfill({ status:204, body:"" }));
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js**", route => route.fulfill({
+    contentType:"application/javascript",
+    body:"window.turnstile={render:(element,options)=>{element.dataset.testWidget='rendered';options.callback('test-turnstile-token');return 'test-widget';},remove:()=>{}};",
+  }));
 });
 
 test("homepage and intake have no serious accessibility violations", async ({ page }) => {
@@ -31,6 +35,9 @@ test("six answers lead to the adaptive evidence question and survive reload", as
   await page.reload();
   await expect(page.getByRole("heading", { name:"Check the raw material." })).toBeVisible();
   await expect(page.getByPlaceholder(/Be specific about/)).toHaveValue(/paid pilot/);
+  await page.getByRole("button", { name:/Generate validation model/ }).click();
+  await page.getByRole("textbox", { name:"Your work email address" }).fill("test@example.com");
+  await expect(page.getByRole("button", { name:/Show my assessment/ })).toBeEnabled();
 });
 
 test("landing page explains the model and keeps one FAQ answer open", async ({ page }) => {
